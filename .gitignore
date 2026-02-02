@@ -1,0 +1,12 @@
+# Config with secrets
+scripts/config.env
+
+# State files
+scripts/.delegation-state
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

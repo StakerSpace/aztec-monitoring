@@ -1,0 +1,166 @@
+# Aztec Sequencer Alert Rules
+# 
+# Copy to your Prometheus rules directory and reload.
+# Based on: https://docs.aztec.network/network/operation/metrics_reference
+
+groups:
+  - name: aztec_critical
+    rules:
+      # L1 Publisher Balance - CRITICAL
+      # Without ETH, your sequencer can't submit blocks to L1
+      - alert: LowL1PublisherBalance
+        expr: aztec_l1_publisher_balance_eth < 0.5
+        for: 5m
+        labels:
+          severity: critical
+          component: publisher
+        annotations:
+          summary: "L1 publisher ETH balance critically low"
+          description: "Publisher balance is {{ $value }} ETH. Refill immediately to avoid transaction failures."
+          runbook: "Top up publisher address with at least 1 ETH"
+
+      # Sequencer State - CRITICAL
+      # State != 1 means sequencer is not operational
+      - alert: SequencerNotHealthy
+        expr: aztec_sequencer_current_state != 1
+        for: 2m
+        labels:
+          severity: critical
+          component: sequencer
+        annotations:
+          summary: "Sequencer module not in healthy state"
+          description: "Sequencer state is {{ $value }} (expected 1). Check sequencer logs immediately."
+          runbook: "Check docker logs, restart if necessary"
+
+      # L2 Block Height Not Increasing - CRITICAL
+      # Node is stuck and not processing blocks
+      - alert: L2BlockHeightNotIncreasing
+        expr: increase(aztec_archiver_block_height{aztec_status=""}[15m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: archiver
+        annotations:
+          summary: "Aztec node not processing L2 blocks"
+          description: "No L2 blocks processed in the last 15 minutes. Node may be stuck or out of sync."
+          runbook: "Check archiver logs, verify L1 RPC connection, consider restart"
+
+  - name: aztec_warning
+    rules:
+      # Low Peer Count
+      # Risk of network isolation
+      - alert: LowPeerCount
+        expr: aztec_peer_manager_peer_count_peers < 5
+        for: 10m
+        labels:
+          severity: warning
+          component: p2p
+        annotations:
+          summary: "Low peer count detected"
+          description: "Node has only {{ $value }} peers connected. Risk of network isolation."
+          runbook: "Check network config, firewall rules, bootstrap nodes"
+
+      # L1 Block Height Not Increasing
+      # L1 RPC connection issues
+      - alert: L1BlockHeightNotIncreasing
+        expr: increase(aztec_l1_block_height[15m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: l1_rpc
+        annotations:
+          summary: "Node not seeing new L1 blocks"
+          description: "No L1 block updates in 15 minutes. Check L1 RPC connection."
+          runbook: "Verify L1 RPC endpoint is responsive, check ETHEREUM_HOSTS config"
+
+      # High Block Proposal Failure Rate
+      - alert: HighBlockProposalFailureRate
+        expr: |
+          (increase(aztec_sequencer_slot_count[15m]) - increase(aztec_sequencer_slot_filled_count[15m]))
+          / increase(aztec_sequencer_slot_count[15m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: sequencer
+        annotations:
+          summary: "High block proposal failure rate"
+          description: "{{ $value | humanizePercentage }} of block proposals are failing in the last 15 minutes."
+          runbook: "Check sequencer logs for proposal errors, verify gas settings"
+
+      # Blob Publishing Failures
+      - alert: BlobPublishingFailures
+        expr: increase(aztec_l1_publisher_blob_tx_failure[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: publisher
+        annotations:
+          summary: "Blob publishing failures detected"
+          description: "{{ $value }} blob transaction failures in the last 15 minutes."
+          runbook: "Check L1 gas prices and publisher balance"
+
+      # Publisher Balance Warning (softer threshold)
+      - alert: L1PublisherBalanceLow
+        expr: aztec_l1_publisher_balance_eth < 1.0 and aztec_l1_publisher_balance_eth >= 0.5
+        for: 30m
+        labels:
+          severity: warning
+          component: publisher
+        annotations:
+          summary: "L1 publisher ETH balance getting low"
+          description: "Publisher balance is {{ $value }} ETH. Consider topping up soon."
+          runbook: "Plan to add more ETH to publisher address"
+
+  - name: aztec_system
+    rules:
+      # High CPU Usage (adjust thresholds for your system)
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) > 2.8
+        for: 10m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "Node using {{ $value }} CPU cores. Consider scaling resources."
+          runbook: "Monitor system load, consider vertical scaling"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 8000000000
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value | humanize1024 }}B."
+          runbook: "Monitor for leaks, consider increasing RAM"
+
+  - name: aztec_provider
+    rules:
+      # Low Keystore Queue (from custom exporter/pushgateway)
+      # This metric should be pushed by the check-provider-queue.sh script
+      - alert: LowKeystoreQueue
+        expr: aztec_provider_queue_length < 5
+        for: 1h
+        labels:
+          severity: warning
+          component: provider
+        annotations:
+          summary: "Provider keystore queue running low"
+          description: "Only {{ $value }} keystores remaining. New delegators cannot stake."
+          runbook: "Generate new keystores with 'aztec validator-keys new' and register them"
+
+      # New Delegation Detected (from custom exporter)
+      # This alerts when a new delegation is seen that may need coinbase configuration
+      - alert: NewDelegationDetected
+        expr: increase(aztec_provider_delegation_count[1h]) > 0
+        for: 1m
+        labels:
+          severity: info
+          component: provider
+        annotations:
+          summary: "New delegation detected for your provider"
+          description: "{{ $value }} new delegation(s) in the last hour. Configure coinbase for new sequencers."
+          runbook: "Check staking dashboard for new split contracts, update keystore coinbase"

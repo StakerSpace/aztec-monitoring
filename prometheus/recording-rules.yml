@@ -1,0 +1,40 @@
+# Aztec Recording Rules
+#
+# Pre-compute expensive queries for dashboard performance
+
+groups:
+  - name: aztec_recording
+    interval: 30s
+    rules:
+      # Block processing rate (blocks per minute)
+      - record: aztec:blocks_per_minute
+        expr: rate(aztec_archiver_block_height[5m]) * 60
+
+      # Block proposal success rate
+      - record: aztec:proposal_success_rate
+        expr: |
+          increase(aztec_sequencer_slot_filled_count[15m])
+          / increase(aztec_sequencer_slot_count[15m])
+
+      # L1 transaction success rate
+      - record: aztec:l1_tx_success_rate
+        expr: |
+          1 - (
+            increase(aztec_l1_publisher_blob_tx_failure[1h])
+            / (increase(aztec_l1_publisher_blob_tx_success[1h]) + increase(aztec_l1_publisher_blob_tx_failure[1h]) + 0.001)
+          )
+
+      # CPU usage percentage (assuming 4 cores, adjust as needed)
+      - record: aztec:cpu_usage_percent
+        expr: rate(process_cpu_seconds_total[5m]) * 100 / 4
+
+      # Memory usage in GB
+      - record: aztec:memory_usage_gb
+        expr: process_resident_memory_bytes / 1073741824
+
+      # Sync progress (ratio of current height to network height)
+      # Requires knowing network head - may need adjustment
+      - record: aztec:sync_progress
+        expr: |
+          aztec_archiver_block_height
+          / on() group_left max(aztec_archiver_block_height)
