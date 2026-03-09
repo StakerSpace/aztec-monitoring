@@ -261,7 +261,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "increase(aztec_sequencer_slot_filled_count[15m]) / increase(aztec_sequencer_slot_count[15m])",
+          "expr": "sum(increase(aztec_sequencer_slot_filled_count[15m])) / sum(increase(aztec_sequencer_slot_total_count[15m]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         }
