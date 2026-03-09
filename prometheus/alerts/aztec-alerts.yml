@@ -87,10 +87,11 @@ groups:
           runbook: "Verify L1 RPC endpoint is responsive, check ETHEREUM_HOSTS config"
 
       # High Block Proposal Failure Rate
+      # sum() needed: slot metrics emit multiple series per label set (with/without aztec_block_proposer)
       - alert: HighBlockProposalFailureRate
         expr: |
-          (increase(aztec_sequencer_slot_count[15m]) - increase(aztec_sequencer_slot_filled_count[15m]))
-          / increase(aztec_sequencer_slot_count[15m]) > 0.05
+          (sum(increase(aztec_sequencer_slot_total_count[15m])) - sum(increase(aztec_sequencer_slot_filled_count[15m])))
+          / sum(increase(aztec_sequencer_slot_total_count[15m])) > 0.05
         for: 5m
         labels:
           severity: warning

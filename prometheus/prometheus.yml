@@ -1,0 +1,85 @@
+# Prometheus Configuration for Aztec Sequencer Monitoring
+#
+# Scrape targets:
+#   1. OTEL Collector (port 8889) - Aztec node metrics exported via OpenTelemetry
+#      Exposes: aztec_archiver_block_height, aztec_sequencer_*, aztec_l1_*, aztec_peer_manager_*, etc.
+#      Source: Aztec node -> OTLP -> otel-collector -> Prometheus exporter
+#
+#   2. Geth (port 6060) - Local execution layer client metrics
+#      Exposes: eth_*, chain_*, p2p_*, txpool_*, system metrics
+#      Enable with: geth --metrics --metrics.addr 0.0.0.0 --metrics.port 6060
+#
+#   3. Lighthouse (port 5054) - Consensus layer client metrics
+#      Exposes: beacon_*, libp2p_*, sync_*, validator_*, slot_*, epoch_*
+#      Enable with: lighthouse bn --metrics --metrics-address 0.0.0.0 --metrics-port 5054
+#
+#   4. Pushgateway (port 9091) - Custom metrics pushed by cron scripts
+#      Exposes: aztec_geth_up, aztec_geth_block_number, aztec_publisher_balance_eth, etc.
+#      Source: check-geth-health.sh, check-publisher-balance.sh, check-provider-queue.sh
+#
+#   5. OTEL Collector self-metrics (port 8888) - Health of the collector itself
+#      Exposes: otelcol_receiver_*, otelcol_exporter_*, otelcol_processor_*
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "recording-rules.yml"
+  - "alerts/*.yml"
+
+scrape_configs:
+  # ── Aztec Node Metrics (via OTEL Collector) ──────────────────────────
+  # This is the main source of Aztec-specific metrics.
+  # The OTEL collector receives metrics from the Aztec node via OTLP
+  # and re-exports them in Prometheus format on port 8889.
+  - job_name: "aztec-node"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels:
+          instance: "aztec-sequencer"
+
+  # ── Geth (Execution Layer) ───────────────────────────────────────────
+  # Your local geth node's built-in Prometheus metrics.
+  # Requires geth started with: --metrics --metrics.addr 0.0.0.0 --metrics.port 6060
+  # If geth runs on the host (not in Docker), use host.docker.internal or the host IP.
+  - job_name: "geth"
+    scrape_interval: 15s
+    metrics_path: /debug/metrics/prometheus
+    static_configs:
+      - targets: ["geth:6060"]
+        labels:
+          instance: "geth-local"
+
+  # ── Lighthouse (Consensus Layer) ─────────────────────────────────────
+  # Lighthouse beacon node Prometheus metrics.
+  # Requires lighthouse started with: --metrics --metrics-address 0.0.0.0 --metrics-port 5054
+  # If lighthouse runs on the host, use host.docker.internal or the host IP.
+  - job_name: "lighthouse"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["lighthouse:5054"]
+        labels:
+          instance: "lighthouse-local"
+
+  # ── Pushgateway (Custom Script Metrics) ──────────────────────────────
+  # Receives metrics pushed by cron scripts:
+  #   - check-geth-health.sh    → aztec_geth_up, aztec_geth_block_number, aztec_geth_peer_count, etc.
+  #   - check-publisher-balance.sh → aztec_publisher_balance_eth
+  #   - check-provider-queue.sh → aztec_provider_queue_length, aztec_provider_delegation_count
+  - job_name: "pushgateway"
+    honor_labels: true
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  # ── OTEL Collector Self-Metrics ──────────────────────────────────────
+  # Monitors the health of the collector itself.
+  # Useful for debugging if Aztec metrics stop flowing.
+  - job_name: "otel-collector"
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["otel-collector:8888"]
+        labels:
+          instance: "otel-collector"
