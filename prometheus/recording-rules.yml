@@ -38,3 +38,14 @@ groups:
         expr: |
           aztec_archiver_block_height
           / on() group_left max(aztec_archiver_block_height)
+
+      # ETH balance burn rate (ETH consumed per hour, negative = draining)
+      # Useful for predicting when balance will hit zero
+      - record: aztec:publisher_balance_burn_rate_per_hour
+        expr: deriv(aztec_l1_publisher_balance_eth[1h]) * 3600
+
+      # Estimated hours until publisher balance hits zero at current burn rate
+      - record: aztec:publisher_balance_hours_remaining
+        expr: |
+          aztec_l1_publisher_balance_eth
+          / (-deriv(aztec_l1_publisher_balance_eth[1h]) * 3600 + 0.0001)

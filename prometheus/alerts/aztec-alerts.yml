@@ -35,7 +35,7 @@ groups:
       # L2 Block Height Not Increasing - CRITICAL
       # Node is stuck and not processing blocks
       - alert: L2BlockHeightNotIncreasing
-        expr: increase(aztec_archiver_block_height{aztec_status=""}[15m]) == 0
+        expr: increase(aztec_archiver_block_height[15m]) == 0
         for: 5m
         labels:
           severity: critical
@@ -44,6 +44,19 @@ groups:
           summary: "Aztec node not processing L2 blocks"
           description: "No L2 blocks processed in the last 15 minutes. Node may be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC connection, consider restart"
+
+      # Local Geth Node Down - CRITICAL
+      # Your sequencer depends on this for all L1 operations
+      - alert: GethNodeDown
+        expr: aztec_geth_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: geth
+        annotations:
+          summary: "Local geth node is not responding"
+          description: "Geth node has been unreachable for 2 minutes. L1 operations will fail."
+          runbook: "Check geth process, logs, and disk space"
 
   - name: aztec_warning
     rules:
@@ -110,6 +123,57 @@ groups:
           summary: "L1 publisher ETH balance getting low"
           description: "Publisher balance is {{ $value }} ETH. Consider topping up soon."
           runbook: "Plan to add more ETH to publisher address"
+
+      # Publisher Balance Draining Fast
+      # Alerts when balance will hit zero within 24 hours at current burn rate
+      - alert: PublisherBalanceDrainingFast
+        expr: |
+          aztec:publisher_balance_hours_remaining > 0
+          and aztec:publisher_balance_hours_remaining < 24
+        for: 15m
+        labels:
+          severity: warning
+          component: publisher
+        annotations:
+          summary: "Publisher ETH balance draining rapidly"
+          description: "At current spend rate, balance will reach zero in ~{{ $value | humanize }} hours."
+          runbook: "Check for abnormal gas costs, top up publisher address"
+
+      # Geth Node Syncing
+      - alert: GethNodeSyncing
+        expr: aztec_geth_syncing == 1
+        for: 30m
+        labels:
+          severity: warning
+          component: geth
+        annotations:
+          summary: "Local geth node is still syncing"
+          description: "Geth has been syncing for over 30 minutes. L1 data may be stale."
+          runbook: "Wait for sync to complete, check disk I/O and network"
+
+      # Geth Low Peers
+      - alert: GethLowPeerCount
+        expr: aztec_geth_up == 1 and aztec_geth_peer_count < 3
+        for: 10m
+        labels:
+          severity: warning
+          component: geth
+        annotations:
+          summary: "Local geth node has few peers"
+          description: "Geth has only {{ $value }} peers. Risk of stale chain data."
+          runbook: "Check geth networking, firewall, and bootnodes"
+
+      # Geth Block Stalled
+      - alert: GethBlockStalled
+        expr: aztec_geth_up == 1 and increase(aztec_geth_block_number[15m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: geth
+        annotations:
+          summary: "Local geth node block height not advancing"
+          description: "No new blocks from geth in 15 minutes. May be stuck or disconnected."
+          runbook: "Check geth sync status and peer connections"
 
   - name: aztec_system
     rules:
