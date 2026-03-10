@@ -20,8 +20,8 @@ source "${SCRIPT_DIR}/config.env" 2>/dev/null || {
     exit 1
 }
 
-# Use local geth node by default, fall back to RPC_URL
-GETH_URL="${GETH_RPC_URL:-${RPC_URL}}"
+# Use local geth node
+GETH_URL="${GETH_RPC_URL:-http://localhost:8545}"
 TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 echo "[$TIMESTAMP] Checking publisher balance via ${GETH_URL}..."
