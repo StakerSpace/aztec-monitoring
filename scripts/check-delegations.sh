@@ -32,7 +32,7 @@ echo "[$TIMESTAMP] Checking for new delegations..."
 QUEUE_LENGTH_HEX=$(cast call "$STAKING_REGISTRY" \
     "getProviderQueueLength(uint256)(uint256)" \
     "$PROVIDER_ID" \
-    --rpc-url "$RPC_URL" 2>/dev/null)
+    --rpc-url "${GETH_RPC_URL:-http://localhost:8545}" 2>/dev/null)
 
 QUEUE_LENGTH=$(cast to-dec "$QUEUE_LENGTH_HEX" 2>/dev/null || echo "0")
 
