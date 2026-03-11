@@ -14,46 +14,8 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "id": 100,
       "panels": [],
-      "title": "🔴 Critical Metrics",
+      "title": "Node Status",
       "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "orange", "value": 0.5 },
-              { "color": "green", "value": 1 }
-            ]
-          },
-          "unit": "currencyETH"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
-      "id": 1,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
-        "textMode": "auto"
-      },
-      "title": "Publisher ETH Balance",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "aztec_l1_publisher_balance_eth{job=~\"$job\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ]
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -74,8 +36,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-      "id": 2,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -103,13 +65,52 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null }
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 1 }
             ]
-          }
+          },
+          "unit": "currencyETH"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "Publisher ETH Balance",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "aztec_l1_publisher_balance_eth{job=~\"$job\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 1 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -146,7 +147,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 1 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -167,11 +168,50 @@
       ]
     },
     {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 12 },
+              { "color": "green", "value": 24 }
+            ]
+          },
+          "unit": "h"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "title": "ETH Hours Remaining",
+      "description": "Estimated hours until publisher balance reaches zero at current burn rate.",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "aztec:publisher_balance_hours_remaining{job=~\"$job\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "id": 101,
       "panels": [],
-      "title": "📊 Block Production",
+      "title": "Block Production",
       "type": "row"
     },
     {
@@ -207,7 +247,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "id": 10,
       "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "single", "sort": "none" }
       },
       "title": "Block Height Over Time",
@@ -222,11 +262,6 @@
           "expr": "aztec_l1_block_height{job=~\"$job\"}",
           "legendFormat": "L1 {{job}}",
           "refId": "B"
-        },
-        {
-          "expr": "aztec_archiver_l1_block_height{job=~\"$job\"}",
-          "legendFormat": "Archiver L1 {{job}}",
-          "refId": "C"
         }
       ]
     },
@@ -281,7 +316,7 @@
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "id": 102,
       "panels": [],
-      "title": "💰 L1 Publisher & Balance",
+      "title": "ETH Balance & L1 Costs",
       "type": "row"
     },
     {
@@ -306,9 +341,7 @@
             "showPoints": "never",
             "spanNulls": false,
             "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
+            "thresholdsStyle": { "mode": "line" }
           },
           "mappings": [],
           "thresholds": {
@@ -323,31 +356,123 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 15 },
       "id": 20,
       "options": {
-        "legend": { "calcs": ["mean", "last", "min"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "legend": { "calcs": ["last", "min"], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "single", "sort": "none" }
       },
-      "title": "Publisher ETH Balance Over Time",
+      "title": "Publisher ETH Balance",
       "type": "timeseries",
       "targets": [
         {
           "expr": "aztec_l1_publisher_balance_eth{job=~\"$job\"}",
-          "legendFormat": "Publisher {{job}} {{aztec_address_sender}}",
+          "legendFormat": "{{job}}",
           "refId": "A"
-        },
-        {
-          "expr": "aztec_l1_balance_eth{job=~\"$job\"}",
-          "legendFormat": "L1 Balance {{job}} {{aztec_l1_sender}}",
-          "refId": "B"
-        },
-        {
-          "expr": "aztec_publisher_balance_eth",
-          "legendFormat": "Geth Direct Balance",
-          "refId": "C"
         }
       ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "ETH / hour",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "currencyETH"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 15 },
+      "id": 21,
+      "options": {
+        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "ETH Burn Rate (per hour)",
+      "description": "Rate of ETH consumption. Negative means balance is decreasing.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "aztec:publisher_balance_burn_rate_per_hour{job=~\"$job\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Gwei",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 15 },
+      "id": 22,
+      "options": {
+        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "L1 Gas Price (Gwei)",
+      "description": "Average gas price for L1 transactions. Directly impacts your ETH burn rate.",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "aztec:l1_gas_price_avg_gwei{job=~\"$job\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "panels": [],
+      "title": "L1 Transactions",
+      "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -378,7 +503,7 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byRegexp", "options": "/Failure/" },
+            "matcher": { "id": "byRegexp", "options": "/Fail/" },
             "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
           },
           {
@@ -387,13 +512,13 @@
           }
         ]
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "id": 21,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 30,
       "options": {
         "legend": { "calcs": ["sum"], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "single", "sort": "none" }
       },
-      "title": "L1 Transaction Results",
+      "title": "Blob Tx Results",
       "type": "timeseries",
       "targets": [
         {
@@ -403,18 +528,10 @@
         },
         {
           "expr": "increase(aztec_l1_publisher_blob_tx_failure{job=~\"$job\"}[1h])",
-          "legendFormat": "Failures {{job}}",
+          "legendFormat": "Fail {{job}}",
           "refId": "B"
         }
       ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
-      "id": 106,
-      "panels": [],
-      "title": "⛽ L1 Gas & Blobs",
-      "type": "row"
     },
     {
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -424,63 +541,11 @@
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Gwei",
+            "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
             "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-      "id": 60,
-      "options": {
-        "legend": { "calcs": ["mean", "last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "L1 Gas Price (Gwei)",
-      "description": "Gas price used for L1 transactions. High gas prices increase ETH burn rate.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_l1_publisher_gas_price_gwei_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(aztec_l1_publisher_gas_price_gwei_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p95 {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Blobs",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 80,
             "gradientMode": "none",
             "hideFrom": { "legend": false, "tooltip": false, "viz": false },
             "lineInterpolation": "linear",
@@ -499,517 +564,33 @@
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "id": 61,
-      "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Blob Count per L1 Transaction",
-      "description": "Number of blobs submitted per L1 transaction.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_l1_publisher_blob_count_blobs_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(aztec_l1_publisher_blob_count_blobs_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p95 {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "L1 Blocks",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
-      "id": 62,
-      "options": {
-        "legend": { "calcs": ["mean", "last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Blob Inclusion Delay (L1 Blocks)",
-      "description": "Number of L1 blocks between blob transaction submission and on-chain inclusion. Higher values indicate L1 congestion.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_l1_publisher_blob_inclusion_blocks_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(aztec_l1_publisher_blob_inclusion_blocks_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p95 {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Gwei",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
-      "id": 63,
-      "options": {
-        "legend": { "calcs": ["mean", "last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Blob Data Gas Cost & Usage",
-      "description": "Gas cost and gas used for blob data in L1 transactions.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_l1_publisher_tx_blobdata_gas_cost_gwei_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "Gas Cost p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_l1_publisher_tx_blobdata_gas_used_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "Gas Used p50 {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 40 },
-      "id": 107,
-      "panels": [],
-      "title": "📦 Archiver Details",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 41 },
-      "id": 70,
-      "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Blocks Synced & Tx Count",
-      "description": "Number of blocks synced from L1 and total transaction count.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "aztec_archiver_block_sync_count{job=~\"$job\"}",
-          "legendFormat": "Blocks Synced {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "aztec_archiver_tx_count{job=~\"$job\"}",
-          "legendFormat": "Total Txs {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Mmana",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 41 },
-      "id": 71,
-      "options": {
-        "legend": { "calcs": ["mean", "last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Block Mana Consumption",
-      "description": "Mana consumed by blocks (in Mmana). Higher values indicate heavier blocks.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_archiver_block_mana_count_Mmana_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(aztec_archiver_block_mana_count_Mmana_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "p95 {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 49 },
-      "id": 72,
+      "id": 31,
       "options": {
         "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "single", "sort": "none" }
       },
-      "title": "Rollup Proofs Submitted",
-      "description": "Number of proofs submitted to L1. Tracks timed-out vs successful proofs.",
+      "title": "Rollup Proofs & Synced Blocks",
+      "description": "Proofs submitted on-chain and blocks synced from L1.",
       "type": "timeseries",
       "targets": [
         {
           "expr": "aztec_archiver_rollup_proof_count{job=~\"$job\"}",
-          "legendFormat": "Proofs {{job}} timed_out={{aztec_proof_timed_out}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 49 },
-      "id": 73,
-      "options": {
-        "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "L1→L2 Messages & Prunes",
-      "description": "L1 to L2 messages synced and chain prune events detected.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "aztec_archiver_message_sync_count{job=~\"$job\"}",
-          "legendFormat": "Messages {{job}}",
+          "legendFormat": "Proofs {{job}}",
           "refId": "A"
         },
         {
-          "expr": "aztec_archiver_prune_count{job=~\"$job\"}",
-          "legendFormat": "Prunes {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Txs per block",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 49 },
-      "id": 74,
-      "options": {
-        "legend": { "calcs": ["mean", "last", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Block Tx Count & Sync Duration",
-      "description": "Transactions per block and block sync duration.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_archiver_block_tx_count_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "Tx/block p50 {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.5, rate(aztec_archiver_block_sync_per_item_duration_milliseconds_bucket{job=~\"$job\"}[15m]))",
-          "legendFormat": "Sync ms p50 {{job}}",
+          "expr": "aztec_archiver_block_sync_count{job=~\"$job\"}",
+          "legendFormat": "Blocks Synced {{job}}",
           "refId": "B"
         }
       ]
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 57 },
-      "id": 108,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 104,
       "panels": [],
-      "title": "🗄️ Database & Verification",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
-      "id": 80,
-      "options": {
-        "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "LMDB Database Size",
-      "description": "Physical file size vs used size vs map (max) size for LMDB databases.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "aztec_db_used_size_bytes{job=~\"$job\"}",
-          "legendFormat": "Used {{aztec_db_type}} {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "aztec_db_physical_file_size_bytes{job=~\"$job\"}",
-          "legendFormat": "File {{aztec_db_type}} {{job}}",
-          "refId": "B"
-        },
-        {
-          "expr": "aztec_db_map_size_bytes{job=~\"$job\"}",
-          "legendFormat": "Map Limit {{aztec_db_type}} {{job}}",
-          "refId": "C"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
-          "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
-      "id": 81,
-      "options": {
-        "legend": { "calcs": ["last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "LMDB Items & Verification",
-      "description": "Number of items in LMDB databases and IVC proof verification failures.",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "aztec_db_num_items{job=~\"$job\"}",
-          "legendFormat": "Items {{aztec_db_type}} {{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "aztec_ivc_verifier_failure_count{job=~\"$job\"}",
-          "legendFormat": "IVC Failures {{job}}",
-          "refId": "B"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 66 },
-      "id": 105,
-      "panels": [],
-      "title": "🔗 Local Geth Node",
+      "title": "Local Geth Node",
       "type": "row"
     },
     {
@@ -1031,8 +612,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 67 },
-      "id": 50,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 33 },
+      "id": 40,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -1065,8 +646,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 67 },
-      "id": 51,
+      "gridPos": { "h": 4, "w": 5, "x": 4, "y": 33 },
+      "id": 41,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1101,8 +682,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 67 },
-      "id": 52,
+      "gridPos": { "h": 4, "w": 5, "x": 9, "y": 33 },
+      "id": 42,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -1139,8 +720,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 67 },
-      "id": 53,
+      "gridPos": { "h": 4, "w": 5, "x": 14, "y": 33 },
+      "id": 43,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -1162,55 +743,46 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "ETH / hour",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": true,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "off" }
-          },
+          "color": { "mode": "thresholds" },
           "mappings": [],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 1 }
+            ]
+          },
           "unit": "currencyETH"
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 67 },
-      "id": 54,
+      "gridPos": { "h": 4, "w": 5, "x": 19, "y": 33 },
+      "id": 44,
       "options": {
-        "legend": { "calcs": ["mean", "last"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
       },
-      "title": "ETH Burn Rate (per hour)",
-      "description": "Rate of ETH consumption. Negative means balance is decreasing.",
-      "type": "timeseries",
+      "title": "L1 Balance (Direct)",
+      "description": "ETH balance checked directly via local Geth RPC (fallback for OTEL).",
+      "type": "stat",
       "targets": [
         {
-          "expr": "aztec:publisher_balance_burn_rate_per_hour{job=~\"$job\"}",
-          "legendFormat": "Burn Rate {{job}}",
+          "expr": "aztec_publisher_balance_eth",
           "refId": "A"
         }
       ]
     },
     {
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 71 },
-      "id": 103,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 37 },
+      "id": 105,
       "panels": [],
-      "title": "🏠 Provider Operations",
+      "title": "Provider Operations",
       "type": "row"
     },
     {
@@ -1230,8 +802,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 72 },
-      "id": 30,
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 38 },
+      "id": 50,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -1240,7 +812,7 @@
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "auto"
       },
-      "title": "Keystore Queue Length",
+      "title": "Keystore Queue",
       "description": "Available keystores for new delegations.",
       "type": "stat",
       "targets": [
@@ -1265,8 +837,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 72 },
-      "id": 31,
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 38 },
+      "id": 51,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -1276,7 +848,6 @@
         "textMode": "auto"
       },
       "title": "Active Delegations",
-      "description": "Number of active sequencers under your provider.",
       "type": "stat",
       "targets": [
         {
@@ -1300,8 +871,8 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 72 },
-      "id": 32,
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 38 },
+      "id": 52,
       "options": {
         "colorMode": "value",
         "graphMode": "none",
@@ -1311,128 +882,11 @@
         "textMode": "auto"
       },
       "title": "Total Blocks Produced",
-      "description": "Blocks produced by your sequencers.",
       "type": "stat",
       "targets": [
         {
           "expr": "sum by (job) (aztec_sequencer_slot_filled_count{job=~\"$job\"})",
           "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 76 },
-      "id": 104,
-      "panels": [],
-      "title": "🖥️ System Resources",
-      "type": "row"
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "line" }
-          },
-          "mappings": [],
-          "max": 100,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 70 },
-              { "color": "red", "value": 85 }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 77 },
-      "id": 40,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "CPU Usage",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "rate(process_cpu_seconds_total{job=~\"$job\"}[5m]) * 100 / 4",
-          "legendFormat": "CPU % {{job}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": { "group": "A", "mode": "none" },
-            "thresholdsStyle": { "mode": "line" }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 6 },
-              { "color": "red", "value": 8 }
-            ]
-          },
-          "unit": "decgbytes"
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 77 },
-      "id": 41,
-      "options": {
-        "legend": { "calcs": ["mean", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true },
-        "tooltip": { "mode": "single", "sort": "none" }
-      },
-      "title": "Memory Usage",
-      "type": "timeseries",
-      "targets": [
-        {
-          "expr": "process_resident_memory_bytes{job=~\"$job\"} / 1073741824",
-          "legendFormat": "Memory GB {{job}}",
           "refId": "A"
         }
       ]
@@ -1463,26 +917,6 @@
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
-      },
-      {
-        "current": {},
-        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(aztec_archiver_block_height{job=~\"$job\"}, instance)",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Instance",
-        "multi": true,
-        "name": "instance",
-        "options": [],
-        "query": {
-          "query": "label_values(aztec_archiver_block_height{job=~\"$job\"}, instance)",
-          "refId": "StandardVariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
       }
     ]
   },
@@ -1491,6 +925,6 @@
   "timezone": "browser",
   "title": "Aztec Sequencer Dashboard",
   "uid": "aztec-sequencer",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
