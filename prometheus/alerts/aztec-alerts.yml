@@ -35,7 +35,7 @@ groups:
       # L2 Block Height Not Increasing - CRITICAL
       # Node is stuck and not processing blocks
       - alert: L2BlockHeightNotIncreasing
-        expr: increase(aztec_archiver_block_height[15m]) == 0
+        expr: increase(aztec_archiver_block_height{aztec_status=""}[15m]) == 0
         for: 5m
         labels:
           severity: critical
@@ -87,11 +87,10 @@ groups:
           runbook: "Verify L1 RPC endpoint is responsive, check ETHEREUM_HOSTS config"
 
       # High Block Proposal Failure Rate
-      # sum() needed: slot metrics emit multiple series per label set (with/without aztec_block_proposer)
       - alert: HighBlockProposalFailureRate
         expr: |
-          (sum(increase(aztec_sequencer_slot_total_count[15m])) - sum(increase(aztec_sequencer_slot_filled_count[15m])))
-          / sum(increase(aztec_sequencer_slot_total_count[15m])) > 0.05
+          (increase(aztec_sequencer_slot_count[15m]) - increase(aztec_sequencer_slot_filled_count[15m]))
+          / increase(aztec_sequencer_slot_count[15m]) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -110,7 +109,7 @@ groups:
           component: publisher
         annotations:
           summary: "Blob publishing failures detected"
-          description: "{{ $value }} blob transaction failures in the last 15 minutes."
+          description: "{{ $value }} blob transaction failures in the last 15 minutes. Check L1 gas prices and publisher balance."
           runbook: "Check L1 gas prices and publisher balance"
 
       # Publisher Balance Warning (softer threshold)
@@ -187,7 +186,7 @@ groups:
           component: system
         annotations:
           summary: "High CPU usage detected"
-          description: "Node using {{ $value }} CPU cores. Consider scaling resources."
+          description: "Node using {{ $value }} CPU cores (above 2.8 threshold). Consider scaling resources."
           runbook: "Monitor system load, consider vertical scaling"
 
       # High Memory Usage
@@ -199,7 +198,7 @@ groups:
           component: system
         annotations:
           summary: "High memory usage detected"
-          description: "Memory usage is {{ $value | humanize1024 }}B."
+          description: "Memory usage is {{ $value | humanize1024 }}B. Consider increasing available RAM or investigating memory leaks."
           runbook: "Monitor for leaks, consider increasing RAM"
 
   - name: aztec_provider

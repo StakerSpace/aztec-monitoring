@@ -15,7 +15,7 @@ groups:
       - record: aztec:proposal_success_rate
         expr: |
           sum(increase(aztec_sequencer_slot_filled_count[15m]))
-          / sum(increase(aztec_sequencer_slot_total_count[15m]))
+          / sum(increase(aztec_sequencer_slot_count[15m]))
 
       # L1 transaction success rate
       - record: aztec:l1_tx_success_rate
