@@ -183,13 +183,14 @@ groups:
           runbook: "Generate new keystores with 'aztec validator-keys new' and register them"
 
       # New delegation needs coinbase config
+      # check-delegations.sh pushes aztec_provider_queue_decrease > 0 when queue shrinks
       - alert: NewDelegationDetected
-        expr: increase(aztec_provider_delegation_count[1h]) > 0
+        expr: aztec_provider_queue_decrease > 0
         for: 1m
         labels:
           severity: info
           component: provider
         annotations:
           summary: "New delegation detected"
-          description: "{{ $value }} new delegation(s) in the last hour. Configure coinbase."
+          description: "{{ $value }} new delegation(s) detected (queue decreased). Configure coinbase."
           runbook: "Check staking dashboard, update keystore coinbase"

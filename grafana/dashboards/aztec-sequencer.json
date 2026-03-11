@@ -305,7 +305,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "sum by (job) (increase(aztec_sequencer_slot_filled_count{job=~\"$job\"}[15m])) / sum by (job) (increase(aztec_sequencer_slot_count{job=~\"$job\"}[15m]))",
+          "expr": "aztec:proposal_success_rate{job=~\"$job\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -847,11 +847,12 @@
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "auto"
       },
-      "title": "Active Delegations",
+      "title": "New Delegations (last check)",
+      "description": "Queue decrease since last delegation check. Positive = new delegations consumed keystores.",
       "type": "stat",
       "targets": [
         {
-          "expr": "aztec_provider_delegation_count",
+          "expr": "aztec_provider_queue_decrease",
           "refId": "A"
         }
       ]

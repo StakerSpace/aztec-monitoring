@@ -13,14 +13,6 @@ groups:
           sum by (job) (increase(aztec_sequencer_slot_filled_count[15m]))
           / sum by (job) (increase(aztec_sequencer_slot_count[15m]))
 
-      # L1 transaction success rate, per node
-      - record: aztec:l1_tx_success_rate
-        expr: |
-          1 - (
-            increase(aztec_l1_publisher_blob_tx_failure[1h])
-            / (increase(aztec_l1_publisher_blob_tx_success[1h]) + increase(aztec_l1_publisher_blob_tx_failure[1h]) + 0.001)
-          )
-
       # ETH balance burn rate (ETH consumed per hour, negative = draining)
       - record: aztec:publisher_balance_burn_rate_per_hour
         expr: deriv(aztec_l1_publisher_balance_eth[1h]) * 3600
