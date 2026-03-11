@@ -1,6 +1,8 @@
 # Aztec Sequencer Alert Rules
-# 
-# Copy to your Prometheus rules directory and reload.
+#
+# Multi-node aware: alerts fire per job (node) so you get separate alerts
+# for mainnet-active, mainnet-redundant, and testnet nodes.
+#
 # Based on: https://docs.aztec.network/network/operation/metrics_reference
 
 groups:
@@ -15,8 +17,8 @@ groups:
           severity: critical
           component: publisher
         annotations:
-          summary: "L1 publisher ETH balance critically low"
-          description: "Publisher balance is {{ $value }} ETH. Refill immediately to avoid transaction failures."
+          summary: "L1 publisher ETH balance critically low ({{ $labels.job }})"
+          description: "Publisher balance on {{ $labels.job }} is {{ $value }} ETH. Refill immediately to avoid transaction failures."
           runbook: "Top up publisher address with at least 1 ETH"
 
       # Sequencer State - CRITICAL
@@ -28,8 +30,8 @@ groups:
           severity: critical
           component: sequencer
         annotations:
-          summary: "Sequencer module not in healthy state"
-          description: "Sequencer state is {{ $value }} (expected 1). Check sequencer logs immediately."
+          summary: "Sequencer not healthy ({{ $labels.job }})"
+          description: "Sequencer state on {{ $labels.job }} is {{ $value }} (expected 1). Check sequencer logs immediately."
           runbook: "Check docker logs, restart if necessary"
 
       # L2 Block Height Not Increasing - CRITICAL
@@ -41,12 +43,11 @@ groups:
           severity: critical
           component: archiver
         annotations:
-          summary: "Aztec node not processing L2 blocks"
-          description: "No L2 blocks processed in the last 15 minutes. Node may be stuck or out of sync."
+          summary: "Node not processing L2 blocks ({{ $labels.job }})"
+          description: "No L2 blocks processed on {{ $labels.job }} in the last 15 minutes. Node may be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC connection, consider restart"
 
       # Local Geth Node Down - CRITICAL
-      # Your sequencer depends on this for all L1 operations
       - alert: GethNodeDown
         expr: aztec_geth_up == 0
         for: 2m
@@ -61,7 +62,6 @@ groups:
   - name: aztec_warning
     rules:
       # Low Peer Count
-      # Risk of network isolation
       - alert: LowPeerCount
         expr: aztec_peer_manager_peer_count_peers < 5
         for: 10m
@@ -69,12 +69,11 @@ groups:
           severity: warning
           component: p2p
         annotations:
-          summary: "Low peer count detected"
-          description: "Node has only {{ $value }} peers connected. Risk of network isolation."
+          summary: "Low peer count ({{ $labels.job }})"
+          description: "{{ $labels.job }} has only {{ $value }} peers. Risk of network isolation."
           runbook: "Check network config, firewall rules, bootstrap nodes"
 
       # L1 Block Height Not Increasing
-      # L1 RPC connection issues
       - alert: L1BlockHeightNotIncreasing
         expr: increase(aztec_l1_block_height[15m]) == 0
         for: 10m
@@ -82,22 +81,22 @@ groups:
           severity: warning
           component: l1_rpc
         annotations:
-          summary: "Node not seeing new L1 blocks"
-          description: "No L1 block updates in 15 minutes. Check L1 RPC connection."
+          summary: "Not seeing new L1 blocks ({{ $labels.job }})"
+          description: "No L1 block updates on {{ $labels.job }} in 15 minutes. Check L1 RPC connection."
           runbook: "Verify L1 RPC endpoint is responsive, check ETHEREUM_HOSTS config"
 
       # High Block Proposal Failure Rate
       - alert: HighBlockProposalFailureRate
         expr: |
-          (increase(aztec_sequencer_slot_count[15m]) - increase(aztec_sequencer_slot_filled_count[15m]))
-          / increase(aztec_sequencer_slot_count[15m]) > 0.05
+          (sum by (job) (increase(aztec_sequencer_slot_count[15m])) - sum by (job) (increase(aztec_sequencer_slot_filled_count[15m])))
+          / sum by (job) (increase(aztec_sequencer_slot_count[15m])) > 0.05
         for: 5m
         labels:
           severity: warning
           component: sequencer
         annotations:
-          summary: "High block proposal failure rate"
-          description: "{{ $value | humanizePercentage }} of block proposals are failing in the last 15 minutes."
+          summary: "High proposal failure rate ({{ $labels.job }})"
+          description: "{{ $value | humanizePercentage }} of block proposals failing on {{ $labels.job }}."
           runbook: "Check sequencer logs for proposal errors, verify gas settings"
 
       # Blob Publishing Failures
@@ -108,8 +107,8 @@ groups:
           severity: warning
           component: publisher
         annotations:
-          summary: "Blob publishing failures detected"
-          description: "{{ $value }} blob transaction failures in the last 15 minutes. Check L1 gas prices and publisher balance."
+          summary: "Blob publishing failures ({{ $labels.job }})"
+          description: "{{ $value }} blob transaction failures on {{ $labels.job }} in the last 15 minutes."
           runbook: "Check L1 gas prices and publisher balance"
 
       # Publisher Balance Warning (softer threshold)
@@ -120,12 +119,11 @@ groups:
           severity: warning
           component: publisher
         annotations:
-          summary: "L1 publisher ETH balance getting low"
-          description: "Publisher balance is {{ $value }} ETH. Consider topping up soon."
+          summary: "Publisher ETH balance getting low ({{ $labels.job }})"
+          description: "Publisher balance on {{ $labels.job }} is {{ $value }} ETH. Consider topping up soon."
           runbook: "Plan to add more ETH to publisher address"
 
       # Publisher Balance Draining Fast
-      # Alerts when balance will hit zero within 24 hours at current burn rate
       - alert: PublisherBalanceDrainingFast
         expr: |
           aztec:publisher_balance_hours_remaining > 0
@@ -135,9 +133,45 @@ groups:
           severity: warning
           component: publisher
         annotations:
-          summary: "Publisher ETH balance draining rapidly"
-          description: "At current spend rate, balance will reach zero in ~{{ $value | humanize }} hours."
+          summary: "Publisher ETH draining rapidly ({{ $labels.job }})"
+          description: "At current spend rate on {{ $labels.job }}, balance will reach zero in ~{{ $value | humanize }} hours."
           runbook: "Check for abnormal gas costs, top up publisher address"
+
+      # High L1 Gas Price
+      - alert: HighL1GasPrice
+        expr: aztec:l1_gas_price_avg_gwei > 100
+        for: 15m
+        labels:
+          severity: warning
+          component: l1
+        annotations:
+          summary: "High L1 gas price ({{ $labels.job }})"
+          description: "Average gas price on {{ $labels.job }} is {{ $value }} Gwei. ETH burn rate will be elevated."
+          runbook: "Monitor L1 gas prices, consider pausing non-critical operations"
+
+      # IVC Verification Failures
+      - alert: IVCVerificationFailures
+        expr: increase(aztec_ivc_verifier_failure_count[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: verifier
+        annotations:
+          summary: "IVC proof verification failures ({{ $labels.job }})"
+          description: "{{ $value }} IVC proof verification failures on {{ $labels.job }} in the last hour."
+          runbook: "Check verifier logs for details on failed proofs"
+
+      # LMDB Database Filling Up
+      - alert: LMDBDatabaseFillingUp
+        expr: aztec:db_usage_ratio > 0.8
+        for: 30m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "LMDB database filling up ({{ $labels.job }} {{ $labels.aztec_db_type }})"
+          description: "{{ $labels.aztec_db_type }} database on {{ $labels.job }} is at {{ $value | humanizePercentage }} capacity."
+          runbook: "Increase LMDB map size or investigate data growth"
 
       # Geth Node Syncing
       - alert: GethNodeSyncing
@@ -185,8 +219,8 @@ groups:
           severity: warning
           component: system
         annotations:
-          summary: "High CPU usage detected"
-          description: "Node using {{ $value }} CPU cores (above 2.8 threshold). Consider scaling resources."
+          summary: "High CPU usage ({{ $labels.job }})"
+          description: "{{ $labels.job }} using {{ $value }} CPU cores (above 2.8 threshold)."
           runbook: "Monitor system load, consider vertical scaling"
 
       # High Memory Usage
@@ -197,14 +231,13 @@ groups:
           severity: warning
           component: system
         annotations:
-          summary: "High memory usage detected"
-          description: "Memory usage is {{ $value | humanize1024 }}B. Consider increasing available RAM or investigating memory leaks."
+          summary: "High memory usage ({{ $labels.job }})"
+          description: "Memory usage on {{ $labels.job }} is {{ $value | humanize1024 }}B."
           runbook: "Monitor for leaks, consider increasing RAM"
 
   - name: aztec_provider
     rules:
-      # Low Keystore Queue (from custom exporter/pushgateway)
-      # This metric should be pushed by the check-provider-queue.sh script
+      # Low Keystore Queue
       - alert: LowKeystoreQueue
         expr: aztec_provider_queue_length < 5
         for: 1h
@@ -216,8 +249,7 @@ groups:
           description: "Only {{ $value }} keystores remaining. New delegators cannot stake."
           runbook: "Generate new keystores with 'aztec validator-keys new' and register them"
 
-      # New Delegation Detected (from custom exporter)
-      # This alerts when a new delegation is seen that may need coinbase configuration
+      # New Delegation Detected
       - alert: NewDelegationDetected
         expr: increase(aztec_provider_delegation_count[1h]) > 0
         for: 1m
