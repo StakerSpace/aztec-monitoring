@@ -1,52 +1,30 @@
 # Aztec Recording Rules
 #
-# Pre-compute expensive queries for dashboard performance
+# Pre-compute expensive queries for dashboard performance.
+# Rules preserve the 'job' label for multi-node setups.
 
 groups:
   - name: aztec_recording
     interval: 30s
     rules:
-      # Block processing rate (blocks per minute)
-      - record: aztec:blocks_per_minute
-        expr: rate(aztec_archiver_block_height[5m]) * 60
-
-      # Block proposal success rate
-      # sum() needed: slot metrics emit multiple series per label set (with/without aztec_block_proposer)
+      # Block proposal success rate, per node
       - record: aztec:proposal_success_rate
         expr: |
-          sum(increase(aztec_sequencer_slot_filled_count[15m]))
-          / sum(increase(aztec_sequencer_slot_count[15m]))
-
-      # L1 transaction success rate
-      - record: aztec:l1_tx_success_rate
-        expr: |
-          1 - (
-            increase(aztec_l1_publisher_blob_tx_failure[1h])
-            / (increase(aztec_l1_publisher_blob_tx_success[1h]) + increase(aztec_l1_publisher_blob_tx_failure[1h]) + 0.001)
-          )
-
-      # CPU usage percentage (assuming 4 cores, adjust as needed)
-      - record: aztec:cpu_usage_percent
-        expr: rate(process_cpu_seconds_total[5m]) * 100 / 4
-
-      # Memory usage in GB
-      - record: aztec:memory_usage_gb
-        expr: process_resident_memory_bytes / 1073741824
-
-      # Sync progress (ratio of current height to network height)
-      # Requires knowing network head - may need adjustment
-      - record: aztec:sync_progress
-        expr: |
-          aztec_archiver_block_height
-          / on() group_left max(aztec_archiver_block_height)
+          sum by (job) (increase(aztec_sequencer_slot_filled_count[15m]))
+          / sum by (job) (increase(aztec_sequencer_slot_count[15m]))
 
       # ETH balance burn rate (ETH consumed per hour, negative = draining)
-      # Useful for predicting when balance will hit zero
       - record: aztec:publisher_balance_burn_rate_per_hour
         expr: deriv(aztec_l1_publisher_balance_eth[1h]) * 3600
 
-      # Estimated hours until publisher balance hits zero at current burn rate
+      # Estimated hours until publisher balance hits zero
       - record: aztec:publisher_balance_hours_remaining
         expr: |
           aztec_l1_publisher_balance_eth
           / (-deriv(aztec_l1_publisher_balance_eth[1h]) * 3600 + 0.0001)
+
+      # L1 gas price moving average (from histogram)
+      - record: aztec:l1_gas_price_avg_gwei
+        expr: |
+          rate(aztec_l1_publisher_gas_price_gwei_sum[15m])
+          / rate(aztec_l1_publisher_gas_price_gwei_count[15m])

@@ -52,11 +52,8 @@ echo "[$TIMESTAMP] Queue: previous=$PREV_QUEUE_LENGTH, current=$QUEUE_LENGTH, di
 
 # Push metrics to Prometheus
 if [ -n "$PUSHGATEWAY_URL" ]; then
-    # Calculate total delegations (initial queue - current queue, needs initial known value)
-    cat <<EOF | curl --silent --data-binary @- "${PUSHGATEWAY_URL}/metrics/job/aztec_provider/instance/${PROVIDER_ID}"
-# HELP aztec_provider_queue_length Number of keystores available in provider queue
-# TYPE aztec_provider_queue_length gauge
-aztec_provider_queue_length{provider_id="${PROVIDER_ID}"} ${QUEUE_LENGTH}
+    # Push delegation detection metric (queue_length is already pushed by check-provider-queue.sh)
+    cat <<EOF | curl --silent --data-binary @- "${PUSHGATEWAY_URL}/metrics/job/aztec_delegations/instance/${PROVIDER_ID}"
 # HELP aztec_provider_queue_decrease Queue decrease since last check (new delegations)
 # TYPE aztec_provider_queue_decrease gauge
 aztec_provider_queue_decrease{provider_id="${PROVIDER_ID}"} ${QUEUE_DECREASED}

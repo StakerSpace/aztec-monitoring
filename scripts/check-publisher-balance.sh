@@ -2,6 +2,10 @@
 #
 # check-publisher-balance.sh
 #
+# OPTIONAL FALLBACK: The Aztec node now exports aztec_l1_publisher_balance_eth
+# via OTEL, so this script is only needed as a backup check via direct Geth RPC.
+# You can safely remove this from cron if OTEL metrics are working reliably.
+#
 # Monitors the ETH balance of your publisher address using your local geth node.
 # Queries via JSON-RPC directly (no Foundry/cast dependency needed).
 # Falls back to cast if JSON-RPC query fails.
