@@ -1,14 +1,15 @@
 # Aztec Sequencer Alert Rules
 #
-# Multi-node aware: alerts fire per job (node) so you get separate alerts
-# for mainnet-active, mainnet-redundant, and testnet nodes.
+# Only uses metrics confirmed to exist in the actual OTEL export.
+# Metrics verified against: aztec_archiver_*, aztec_l1_*, aztec_l1_publisher_*
+# NOT exported (as of v4.1.0-rc.2): aztec_sequencer_*, aztec_peer_manager_*
 
 groups:
   - name: aztec_critical
     rules:
       # Publisher running out of ETH - can't submit blocks without it
       - alert: LowL1PublisherBalance
-        expr: aztec_l1_publisher_balance_eth < 0.5
+        expr: aztec_l1_publisher_balance_eth < 0.2
         for: 5m
         labels:
           severity: critical
@@ -17,18 +18,6 @@ groups:
           summary: "Publisher ETH critically low ({{ $labels.job }})"
           description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Refill immediately."
           runbook: "Top up publisher address with at least 1 ETH"
-
-      # Sequencer not operational
-      - alert: SequencerNotHealthy
-        expr: aztec_sequencer_current_state != 1
-        for: 2m
-        labels:
-          severity: critical
-          component: sequencer
-        annotations:
-          summary: "Sequencer not healthy ({{ $labels.job }})"
-          description: "State is {{ $value }} (expected 1) on {{ $labels.job }}."
-          runbook: "Check docker logs, restart if necessary"
 
       # Node stuck - not processing blocks
       - alert: L2BlockHeightNotIncreasing
@@ -56,18 +45,6 @@ groups:
 
   - name: aztec_warning
     rules:
-      # Low peers - risk of isolation
-      - alert: LowPeerCount
-        expr: aztec_peer_manager_peer_count_peers < 5
-        for: 10m
-        labels:
-          severity: warning
-          component: p2p
-        annotations:
-          summary: "Low peer count ({{ $labels.job }})"
-          description: "{{ $labels.job }} has only {{ $value }} peers."
-          runbook: "Check network config, firewall, bootstrap nodes"
-
       # L1 connection issues
       - alert: L1BlockHeightNotIncreasing
         expr: increase(aztec_l1_block_height[15m]) == 0
@@ -79,20 +56,6 @@ groups:
           summary: "No new L1 blocks ({{ $labels.job }})"
           description: "No L1 block updates on {{ $labels.job }} in 15 minutes."
           runbook: "Verify L1 RPC endpoint, check ETHEREUM_HOSTS config"
-
-      # Block proposals failing
-      - alert: HighBlockProposalFailureRate
-        expr: |
-          (sum by (job) (increase(aztec_sequencer_slot_count[15m])) - sum by (job) (increase(aztec_sequencer_slot_filled_count[15m])))
-          / sum by (job) (increase(aztec_sequencer_slot_count[15m])) > 0.05
-        for: 5m
-        labels:
-          severity: warning
-          component: sequencer
-        annotations:
-          summary: "High proposal failure rate ({{ $labels.job }})"
-          description: "{{ $value | humanizePercentage }} of proposals failing on {{ $labels.job }}."
-          runbook: "Check sequencer logs, verify gas settings"
 
       # Blob publishing failures
       - alert: BlobPublishingFailures
@@ -108,7 +71,7 @@ groups:
 
       # Balance getting low (softer threshold)
       - alert: L1PublisherBalanceLow
-        expr: aztec_l1_publisher_balance_eth < 1.0 and aztec_l1_publisher_balance_eth >= 0.5
+        expr: aztec_l1_publisher_balance_eth < 1.0 and aztec_l1_publisher_balance_eth >= 0.2
         for: 30m
         labels:
           severity: warning
