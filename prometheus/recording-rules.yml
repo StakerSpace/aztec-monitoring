@@ -7,12 +7,6 @@ groups:
   - name: aztec_recording
     interval: 30s
     rules:
-      # Block proposal success rate, per node
-      - record: aztec:proposal_success_rate
-        expr: |
-          sum by (job) (increase(aztec_sequencer_slot_filled_count[15m]))
-          / sum by (job) (increase(aztec_sequencer_slot_count[15m]))
-
       # ETH balance burn rate (ETH consumed per hour, negative = draining)
       - record: aztec:publisher_balance_burn_rate_per_hour
         expr: deriv(aztec_l1_publisher_balance_eth[1h]) * 3600
