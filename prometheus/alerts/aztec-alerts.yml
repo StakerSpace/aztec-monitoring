@@ -18,6 +18,18 @@ groups:
           description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Refill immediately."
           runbook: "Top up publisher address with at least 1 ETH"
 
+      # Sequencer not operational (metric appears once sequencer module starts)
+      - alert: SequencerNotHealthy
+        expr: aztec_sequencer_current_state != 1
+        for: 2m
+        labels:
+          severity: critical
+          component: sequencer
+        annotations:
+          summary: "Sequencer not healthy ({{ $labels.job }})"
+          description: "State is {{ $value }} (expected 1) on {{ $labels.job }}."
+          runbook: "Check docker logs, restart if necessary"
+
       # Node stuck - not processing blocks
       - alert: L2BlockHeightNotIncreasing
         expr: increase(aztec_archiver_block_height{aztec_status=""}[15m]) == 0
@@ -67,6 +79,20 @@ groups:
           summary: "No new L1 blocks ({{ $labels.job }})"
           description: "No L1 block updates on {{ $labels.job }} in 15 minutes."
           runbook: "Verify L1 RPC endpoint, check ETHEREUM_HOSTS config"
+
+      # Block proposals failing (fires only when slot_count > 0, i.e. sequencer is active)
+      - alert: HighBlockProposalFailureRate
+        expr: |
+          (sum by (job) (increase(aztec_sequencer_slot_count[15m])) - sum by (job) (increase(aztec_sequencer_slot_filled_count[15m])))
+          / sum by (job) (increase(aztec_sequencer_slot_count[15m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: sequencer
+        annotations:
+          summary: "High proposal failure rate ({{ $labels.job }})"
+          description: "{{ $value | humanizePercentage }} of proposals failing on {{ $labels.job }}."
+          runbook: "Check sequencer logs, verify gas settings"
 
       # Blob publishing failures
       - alert: BlobPublishingFailures
