@@ -121,7 +121,7 @@ groups:
 
       # Geth block stalled
       - alert: GethBlockStalled
-        expr: aztec_geth_up == 1 and increase(aztec_geth_block_number[15m]) == 0
+        expr: aztec_geth_up == 1 and delta(aztec_geth_block_number[15m]) <= 0
         for: 10m
         labels:
           severity: warning
