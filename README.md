@@ -156,17 +156,17 @@ crontab -e
 Add the following entries (update the path to match your install location):
 
 ```cron
-# Geth health - every 5 minutes
-*/5 * * * * /path/to/aztec-monitoring/scripts/check-geth-health.sh >> /var/log/aztec-monitor.log 2>&1
+# Geth health - every minute
+* * * * * /path/to/aztec-monitoring/scripts/check-geth-health.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 # Publisher balance - every 30 minutes
-*/30 * * * * /path/to/aztec-monitoring/scripts/check-publisher-balance.sh >> /var/log/aztec-monitor.log 2>&1
+*/30 * * * * /path/to/aztec-monitoring/scripts/check-publisher-balance.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 # Provider queue - every 4 hours
-0 */4 * * * /path/to/aztec-monitoring/scripts/check-provider-queue.sh >> /var/log/aztec-monitor.log 2>&1
+0 */4 * * * /path/to/aztec-monitoring/scripts/check-provider-queue.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 # Delegation detection - every hour
-0 * * * * /path/to/aztec-monitoring/scripts/check-delegations.sh >> /var/log/aztec-monitor.log 2>&1
+0 * * * * /path/to/aztec-monitoring/scripts/check-delegations.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 ```
 
 ### 7. Verify the wiring

@@ -9,7 +9,7 @@
 #   ./check-delegations.sh
 #
 # Cron (every hour):
-#   0 * * * * /path/to/check-delegations.sh >> /var/log/aztec-monitor.log 2>&1
+#   0 * * * * /path/to/check-delegations.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 set -e
 

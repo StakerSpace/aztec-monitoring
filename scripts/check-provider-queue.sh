@@ -9,7 +9,7 @@
 #   ./check-provider-queue.sh
 #
 # Cron (every 4 hours):
-#   0 */4 * * * /path/to/check-provider-queue.sh >> /var/log/aztec-monitor.log 2>&1
+#   0 */4 * * * /path/to/check-provider-queue.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 set -e
 

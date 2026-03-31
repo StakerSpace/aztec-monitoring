@@ -14,7 +14,7 @@
 #   ./check-publisher-balance.sh
 #
 # Cron (every 30 minutes):
-#   */30 * * * * /path/to/check-publisher-balance.sh >> /var/log/aztec-monitor.log 2>&1
+#   */30 * * * * /path/to/check-publisher-balance.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 set -e
 
