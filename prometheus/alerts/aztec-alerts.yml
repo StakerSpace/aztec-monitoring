@@ -31,17 +31,6 @@ groups:
           description: "{{ $labels.job }} has not processed any blocks. May be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC, consider restart"
 
-      # Local Geth down - all L1 operations fail
-      - alert: GethNodeDown
-        expr: aztec_geth_up == 0
-        for: 2m
-        labels:
-          severity: critical
-          component: geth
-        annotations:
-          summary: "Local Geth node is down"
-          description: "Geth unreachable for 2 minutes. L1 operations will fail."
-          runbook: "Check geth process, logs, and disk space"
 
   - name: aztec_warning
     rules:
@@ -121,7 +110,7 @@ groups:
 
       # Geth block stalled
       - alert: GethBlockStalled
-        expr: aztec_geth_up == 1 and increase(aztec_geth_block_number[15m]) == 0
+        expr: increase(aztec_geth_block_number[5m]) < 10
         for: 10m
         labels:
           severity: warning
@@ -130,6 +119,18 @@ groups:
           summary: "Geth block height not advancing"
           description: "No new blocks from geth in 15 minutes."
           runbook: "Check geth sync status and peer connections"
+
+      # Geth down
+      - alert: GethDown
+        expr: aztec_geth_up == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: geth
+        annotations:
+          summary: "Geth is down"
+          description: "The geth health check reports the node as down."
+          runbook: "Check geth process, RPC, and logs"
 
   - name: aztec_provider
     rules:
