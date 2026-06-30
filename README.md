@@ -22,7 +22,7 @@ aztec-monitoring/
 │   ├── prometheus.yml                 # Prometheus scrape configuration
 │   ├── recording-rules.yml            # Pre-computed metric rules
 │   └── alerts/
-│       └── aztec-alerts.yml           # Alert rules (critical, warning, system)
+│       └── aztec-alerts.yml           # Alert rules (critical, warning, provider)
 └── scripts/
     ├── config.env.example             # Configuration template
     ├── setup-pushgateway.sh           # Pushgateway installer (systemd)
@@ -46,7 +46,9 @@ System tools required by the monitoring scripts:
 
 - `curl` - HTTP requests (RPC calls, webhooks, Pushgateway pushes)
 - `bc` - floating-point balance comparisons
-- `cast` (Foundry) - **optional**, scripts fall back to JSON-RPC if not installed
+- `cast` (Foundry) - **required for the provider scripts** (`check-provider-queue.sh`,
+  `check-delegations.sh`) which make contract calls. The Geth and publisher-balance
+  scripts use plain JSON-RPC and don't need it.
 
 ## Installation
 
@@ -80,11 +82,11 @@ cp prometheus/alerts/aztec-alerts.yml /etc/prometheus/rules/
 cp prometheus/recording-rules.yml /etc/prometheus/rules/
 ```
 
-Then **merge** the scrape targets from `prometheus/prometheus.yml` into your existing Prometheus config. The file defines five scrape jobs:
+Then **merge** the scrape targets from `prometheus/prometheus.yml` into your existing Prometheus config. It defines five active scrape jobs (plus commented-out templates for redundant/testnet Aztec nodes):
 
 | Job | Target | What it scrapes |
 |-----|--------|-----------------|
-| `aztec-node` | `otel-collector:8889` | Aztec node metrics via OTEL |
+| `aztec-mainnet-active` | `otel-collector:8889` | Aztec node metrics via OTEL |
 | `geth` | `geth:6060` | Geth execution layer metrics |
 | `lighthouse` | `lighthouse:5054` | Lighthouse consensus layer metrics |
 | `pushgateway` | `pushgateway:9091` | Custom metrics from cron scripts |
@@ -104,7 +106,7 @@ curl -X POST http://localhost:9090/-/reload
 2. Go to **Dashboards > Import**
 3. Upload `grafana/dashboards/aztec-sequencer.json`
 
-The dashboard includes panels for: publisher balance, sequencer state, L2 block height, peer count, block production rates, L1 transaction results, and local Geth node health.
+The dashboard includes panels for: publisher ETH balance & burn rate, ETH hours remaining, L2/L1 block heights, block production over time, blob tx results, rollup proofs & synced blocks, L1 gas price, local Geth health, and the provider keystore queue.
 
 ### 5. Configure monitoring scripts
 
@@ -128,7 +130,8 @@ PUBLISHER_ADDRESS="0xYOUR_PUBLISHER_ADDRESS"
 # Contract addresses (update for mainnet)
 STAKING_REGISTRY="0xc3860c45e5F0b1eF3000dbF93149756f16928ADB"
 
-# Alert thresholds
+# Alert thresholds (used by the cron scripts' own webhook alerts only;
+# the Prometheus alert thresholds live in prometheus/alerts/aztec-alerts.yml)
 ALERT_THRESHOLD_QUEUE=5
 ALERT_THRESHOLD_ETH="0.5"
 
@@ -185,6 +188,18 @@ curl -s http://localhost:9090/api/v1/targets | grep -o '"health":"[^"]*"'
 # 3. Check Prometheus rules loaded
 curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 ```
+
+## Troubleshooting
+
+| Symptom | Likely cause & fix |
+|---------|--------------------|
+| An alert never fires / a panel is empty | The metric/series may not exist on your node. Check it directly: `curl -s http://otel-collector:8889/metrics \| grep <metric>`. Note `aztec_archiver_block_height` is split by `aztec_status` — query `aztec_status="proposed"` for the tip (an empty `""` selector matches nothing). |
+| Provider alert firing on a node that isn't a provider | Set `IS_PROVIDER="false"` in `config.env`. The next provider-script run clears the `aztec_provider_*` series from Pushgateway. |
+| `aztec_provider_*` metrics missing on a provider node | `cast` (Foundry) not installed, or `PROVIDER_ID` / `STAKING_REGISTRY` wrong. Run `./scripts/check-provider-queue.sh` manually to see the error. |
+| A stale value is stuck in Pushgateway | The scripts now use `PUT`/`DELETE` to avoid this, but to wipe a group by hand: `curl -X DELETE http://localhost:9091/metrics/job/<job>/instance/<instance>`. |
+| No notifications despite a firing alert | Uncomment and set at least one of `WEBHOOK_URL` / `DISCORD_WEBHOOK` / `TELEGRAM_*` in `config.env` (script alerts), and configure Alertmanager routing (Prometheus alerts). |
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
 ## Metrics Reference
 

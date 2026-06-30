@@ -73,6 +73,17 @@ out of date in places.
   install time and the group-level `DELETE`/`PUT` the scripts rely on are enabled
   by default (no admin API needed); no change required.
 
+### Docs
+- Added a **Troubleshooting** table (empty panel / alert not firing, provider
+  alert on a non-provider node, missing `aztec_provider_*`, stale Pushgateway
+  values, no notifications) and linked this changelog from the README.
+- Corrected README drift: alert groups are `critical`/`warning`/`provider` (not
+  "system"); the scrape job is `aztec-mainnet-active` (not `aztec-node`); `cast`
+  is **required** for the provider scripts (not optional); and the dashboard-panel
+  blurb now lists the panels that actually exist (dropped the non-existent
+  "sequencer state" and "peer count" panels). Clarified that the `config.env`
+  thresholds are script-side only — Prometheus thresholds live in the alert YAML.
+
 ### Operator notes
 - Sequencer/publisher alerts need no provider toggle: those OTEL metrics don't
   exist on a node that isn't running a sequencer, so the alerts have no series to
