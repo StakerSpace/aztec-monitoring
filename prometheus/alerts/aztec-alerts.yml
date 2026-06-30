@@ -1,35 +1,24 @@
-# Aztec Sequencer Alert Rules
+# Aztec Sequencer Alert Rules — critical / page-worthy only
+#
+# Node-operator policy: we ONLY alert on conditions that warrant waking
+# someone up. Everything that was previously "warning" or "info" (soft balance,
+# blob/proposal/attestation failures, slot fill, reorgs, geth peer/sync/stall,
+# provider keystore queue, etc.) has been removed — watch those on the Grafana
+# dashboard instead. Each alert below is severity: critical and should page.
 #
 # Metric names cross-checked against the ACTUAL aztec-packages source AND
 # Aztec's own production monitoring on master (latest release line
 # v4.1.2 / v4.2.0-nightly):
-#   - instrument definitions:
-#       yarn-project/sequencer-client/src/publisher/sequencer-publisher-metrics.ts
-#       yarn-project/p2p/src/services/peer-manager/metrics.ts
-#       yarn-project/telemetry-client/src/metrics.ts
-#   - exported names confirmed verbatim against Aztec's own dashboards & rules:
-#       spartan/metrics/grafana/{dashboards,alerts/rules.yaml}
-#
-# Confirmed exported names used below:
-#   aztec_l1_publisher_balance_eth              (gauge, 'eth' suffix)
-#   aztec_archiver_block_height                 (gauge, split by aztec_status)
-#   aztec_archiver_l1_block_height              (gauge)
-#   aztec_l1_publisher_blob_tx_success/failure  (UpDownCounter -> gauge, no _total)
-#   aztec_l1_publisher_gas_price_gwei_*         (histogram, 'gwei' suffix)
-#   aztec_sequencer_block_proposal_failed_count (gauge, label aztec_error_type)
-#   aztec_world_state_critical_error_count      (counter)
+#   aztec_l1_publisher_balance_eth          (gauge, 'eth' suffix)
+#   aztec_archiver_block_height             (gauge, split by aztec_status)
+#   aztec_world_state_critical_error_count  (counter)
+#   aztec_geth_up                           (pushgateway gauge from check-geth-health.sh)
 #
 # IMPORTANT: aztec_archiver_block_height is split by the aztec_status attribute
 # (values: proposed / proven / finalized). There is NO empty-string series, so a
 # selector like {aztec_status=""} matches nothing and an alert built on it never
 # fires. Use aztec_status="proposed" for the chain tip - this is exactly what
 # Aztec's own "Chain - no new blocks" alert uses.
-#
-# Peer count (aztec_peer_manager_peer_count) is created without a unit in source
-# and is not referenced by any Aztec dashboard/alert, so its exact exported name
-# can't be confirmed; we deliberately do NOT alert on it (a wrong name would be a
-# silently non-matching, false-comfort rule). We use the proposal-failure and
-# world-state signals Aztec itself alerts on instead.
 
 groups:
   - name: aztec_critical
@@ -84,149 +73,3 @@ groups:
           summary: "Geth is down"
           description: "The geth health check reports the node as down (fresh data)."
           runbook: "Check geth process, RPC, and logs"
-
-
-  - name: aztec_warning
-    rules:
-      # L1 connection issues. aztec_archiver_l1_block_height is the L1 tip the
-      # node's archiver has seen (the metric Aztec's own dashboards use).
-      - alert: L1BlockHeightNotIncreasing
-        expr: increase(aztec_archiver_l1_block_height[15m]) == 0
-        for: 10m
-        labels:
-          severity: warning
-          component: l1_rpc
-        annotations:
-          summary: "No new L1 blocks ({{ $labels.job }})"
-          description: "No L1 block updates on {{ $labels.job }} in 15 minutes."
-          runbook: "Verify L1 RPC endpoint, check ETHEREUM_HOSTS config"
-
-      # Block building/proposal failing (excludes the benign no-txs case, exactly
-      # as Aztec's own "block build failed" alert does). Confirmed exported name.
-      - alert: SequencerBlockProposalFailures
-        expr: |
-          sum by (job) (
-            increase(aztec_sequencer_block_proposal_failed_count{aztec_error_type!="insufficient_txs"}[15m])
-          ) > 1
-        for: 5m
-        labels:
-          severity: warning
-          component: sequencer
-        annotations:
-          summary: "Sequencer block proposals failing ({{ $labels.job }})"
-          description: "{{ $value }} block proposal failure(s) on {{ $labels.job }} in 15m (excluding insufficient_txs)."
-          runbook: "Check sequencer logs and aztec_error_type; verify resources, peers, L1 connectivity"
-
-      # Blob publishing failures
-      - alert: BlobPublishingFailures
-        expr: increase(aztec_l1_publisher_blob_tx_failure[15m]) > 0
-        for: 5m
-        labels:
-          severity: warning
-          component: publisher
-        annotations:
-          summary: "Blob tx failures ({{ $labels.job }})"
-          description: "{{ $value }} failures on {{ $labels.job }} in 15 minutes."
-          runbook: "Check L1 gas prices and publisher balance"
-
-      # Balance getting low (softer threshold)
-      - alert: L1PublisherBalanceLow
-        expr: aztec_l1_publisher_balance_eth < 1.0 and aztec_l1_publisher_balance_eth >= 0.2
-        for: 30m
-        labels:
-          severity: warning
-          component: publisher
-        annotations:
-          summary: "Publisher ETH getting low ({{ $labels.job }})"
-          description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Top up soon."
-          runbook: "Plan to add more ETH to publisher address"
-
-      # Balance draining fast - will hit zero within 24h
-      - alert: PublisherBalanceDrainingFast
-        expr: |
-          aztec:publisher_balance_hours_remaining > 0
-          and aztec:publisher_balance_hours_remaining < 24
-        for: 15m
-        labels:
-          severity: warning
-          component: publisher
-        annotations:
-          summary: "Publisher ETH draining fast ({{ $labels.job }})"
-          description: "Balance will reach zero in ~{{ $value | humanize }} hours on {{ $labels.job }}."
-          runbook: "Check gas costs, top up publisher address"
-
-      # Geth syncing for too long. The freshness guard (push_time_seconds is added
-      # automatically by Pushgateway per group) stops a dead check-geth-health.sh
-      # cron from firing on a stale value.
-      - alert: GethNodeSyncing
-        expr: aztec_geth_syncing == 1 and on(job, instance) (time() - push_time_seconds < 900)
-        for: 30m
-        labels:
-          severity: warning
-          component: geth
-        annotations:
-          summary: "Geth still syncing"
-          description: "Geth syncing for over 30 minutes. L1 data may be stale."
-          runbook: "Wait for sync, check disk I/O and network"
-
-      # Geth low peers
-      - alert: GethLowPeerCount
-        expr: aztec_geth_up == 1 and aztec_geth_peer_count < 3 and on(job, instance) (time() - push_time_seconds < 900)
-        for: 10m
-        labels:
-          severity: warning
-          component: geth
-        annotations:
-          summary: "Geth has few peers"
-          description: "Only {{ $value }} peers. Risk of stale chain data."
-          runbook: "Check geth networking, firewall, bootnodes"
-
-      # Geth block stalled. 15m window is robust to the 5m push cadence; the
-      # geth_up==1 guard avoids duplicating GethDown, and the freshness guard
-      # avoids firing on a stale (dead-cron) block number.
-      - alert: GethBlockStalled
-        expr: |
-          increase(aztec_geth_block_number[15m]) < 20
-          and aztec_geth_up == 1
-          and on(job, instance) (time() - push_time_seconds < 900)
-        for: 10m
-        labels:
-          severity: warning
-          component: geth
-        annotations:
-          summary: "Geth block height not advancing"
-          description: "Fewer than 20 new geth blocks in 15 minutes."
-          runbook: "Check geth sync status and peer connections"
-
-  - name: aztec_provider
-    # Provider alerts are gated on aztec_provider_active == 1 so they ONLY fire on
-    # nodes that are actually staking providers. check-provider-queue.sh sets
-    # aztec_provider_active=1 only after a successful on-chain queue read; on
-    # non-provider nodes (IS_PROVIDER=false) it deletes the whole group, and on a
-    # failed read it sets active=0 and drops the queue gauge. This prevents a
-    # missing/0/stale queue value from raising a false LowKeystoreQueue alert.
-    rules:
-      # Running out of keystores
-      - alert: LowKeystoreQueue
-        expr: aztec_provider_queue_length < 5 and on(provider_id) aztec_provider_active == 1
-        for: 1h
-        labels:
-          severity: warning
-          component: provider
-        annotations:
-          summary: "Keystore queue running low"
-          description: "Only {{ $value }} keystores left. New delegators can't stake."
-          runbook: "Generate new keystores with 'aztec validator-keys new' and register them"
-
-      # New delegation needs coinbase config
-      # check-delegations.sh pushes aztec_provider_queue_decrease > 0 when queue shrinks
-      - alert: NewDelegationDetected
-        expr: aztec_provider_queue_decrease > 0 and on(provider_id) aztec_provider_active == 1
-        for: 1m
-        labels:
-          severity: info
-          component: provider
-        annotations:
-          summary: "New delegation detected"
-          description: "{{ $value }} new delegation(s) detected (queue decreased). Configure coinbase."
-          runbook: "Check staking dashboard, update keystore coinbase"
