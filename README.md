@@ -228,8 +228,14 @@ monitoring (`spartan/metrics/grafana/dashboards` and `.../alerts/rules.yaml`) on
 master (latest release line v4.1.2 / v4.2.0-nightly). OTEL dots become
 underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gwei`).
 
-| Metric | Description | Alert |
-|--------|-------------|-------|
+The **Suggested threshold** column is a reference for dashboard-watching — it is
+**not** the implemented alert set. Only four metrics are wired as paging alerts
+(`aztec_l1_publisher_balance_eth` < 0.2, `aztec_archiver_block_height` tip not
+advancing 15m, `aztec_world_state_critical_error_count` any in 15m, and
+`aztec_geth_up` == 0); see [Key Alerts](#key-alerts). Watch the rest on Grafana.
+
+| Metric | Description | Suggested threshold |
+|--------|-------------|---------------------|
 | `aztec_l1_publisher_balance_eth` | Publisher ETH balance (gauge) | < 0.2 ETH critical, < 1.0 ETH warning |
 | `aztec_archiver_block_height` | L2 block height, split by `aztec_status` (`proposed`/`proven`/`finalized`) | tip not advancing 15m |
 | `aztec_archiver_l1_block_height` | L1 block height the archiver has seen | No increase in 15m |
@@ -258,10 +264,8 @@ underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gw
 > **Peer count:** the exported name is `aztec_peer_manager_peer_count_peers` (the
 > instrument is emitted with a `_peers` suffix) — confirmed verbatim against
 > Aztec's own `network-tps` dashboard. The dashboard now charts it as a "Peer
-> Count" stat. We still don't *alert* on a fixed peer threshold (a healthy floor
-> is deployment-specific); the proposal-failure, slot-fill, attestation, and
-> world-state signals Aztec itself alerts on are better "node is unhealthy"
-> proxies and we cover those instead.
+> Count" stat. We don't *alert* on a fixed peer threshold (a healthy floor is
+> deployment-specific) — watch the "Peer Count" panel on the dashboard instead.
 
 ### From Cron Scripts (via Pushgateway)
 
@@ -299,73 +303,35 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 | `WorldStateCriticalError` | Any world-state critical error in 15m (for 1m) | Check logs; may need resync from snapshot |
 | `GethDown` | `aztec_geth_up == 0` for 5m | Check geth process, RPC, and logs |
 
-### Warning
+> **Critical-only by design.** As node operators we page **only** on conditions
+> that warrant waking someone up, so the alert set is deliberately just the four
+> above. Everything softer — balance getting low, burn rate, blob/proposal/
+> attestation failures, slot fill rate, chain reorgs, geth peers/sync/stall,
+> mempool, the provider keystore queue, new delegations — is **watched on the
+> Grafana dashboard**, not alerted on. (Earlier revisions shipped `warning`/`info`
+> rules for these; they were removed.) If you want any of them back as alerts, add
+> them to `prometheus/alerts/aztec-alerts.yml` with the severity you prefer.
 
-| Alert | Condition | Action |
-|-------|-----------|--------|
-| `L1BlockHeightNotIncreasing` | No L1 block updates in 15m (for 10m) | Verify L1 RPC / `ETHEREUM_HOSTS` |
-| `SequencerBlockProposalFailures` | > 1 proposal failure in 15m, excl. no-txs (for 5m) | Check `aztec_error_type`, resources, peers, L1 |
-| `BlobPublishingFailures` | Any blob tx failures in 15m (for 5m) | Check L1 gas prices and publisher balance |
-| `L1PublisherBalanceLow` | Balance 0.2–1.0 ETH for 30m | Plan to top up soon |
-| `PublisherBalanceDrainingFast` | < 24h balance remaining for 15m | Investigate burn rate, top up |
-| `GethNodeSyncing` | `aztec_geth_syncing == 1` for 30m | Wait for sync, check disk I/O / network |
-| `GethLowPeerCount` | Geth up with < 3 peers for 10m | Check geth networking, firewall, bootnodes |
-| `GethBlockStalled` | < 20 new geth blocks per 15m (geth up & data fresh), for 10m | Check geth sync status and peers |
-| `ChainReorg` | `aztec_archiver_prune_count` increases > 1 in 15m (for 5m) | Check L1 finality/peers; investigate if reorgs are sustained |
-| `LowSlotFillRate` | Slots filled / assigned < 80% over 1h (with proposer duties, for 15m) | Check missed proposals: peers, attestation latency, build failures |
-| `AttestationFailures` | `aztec_validator_attestation_failed_node_issue_count` > 0 in 15m (for 10m) | Check node health, resources, peers, attestation-collection latency |
-| `L1TxPublishFailures` | reverted + cancelled + not-mined L1 txs > 1 in 15m (for 10m) | Check L1 gas/nonce, publisher balance, L1 RPC |
+### Paging policy — every alert pages
 
-### Provider
-
-| Alert | Condition | Action |
-|-------|-----------|--------|
-| `LowKeystoreQueue` | `aztec_provider_queue_length < 5` **and** `aztec_provider_active == 1` for 1h | Generate & register new keystores |
-| `NewDelegationDetected` | `aztec_provider_queue_decrease > 0` **and** `aztec_provider_active == 1` (info) | Configure coinbase for new sequencer |
-
-### Avoiding false positives on non-provider nodes
-
-The goal is that an alert only fires when something is genuinely wrong. Two
-mechanisms keep provider alerts quiet on nodes that aren't staking providers:
-
-1. **`IS_PROVIDER` toggle** — set `IS_PROVIDER="false"` in `config.env` on a
-   non-provider node. The provider scripts then `DELETE` their Pushgateway group
-   and exit, so no `aztec_provider_*` series exist at all.
-2. **`aztec_provider_active` gate** — when `IS_PROVIDER="true"`, the queue is only
-   reported after a *successful* on-chain read, alongside `aztec_provider_active=1`.
-   A failed read pushes `active=0` and drops the queue gauge (via Pushgateway
-   `PUT`), so a missing/zero/stale value can never be misread as "queue = 0". Both
-   provider alerts require `aztec_provider_active == 1`.
-
-The sequencer/publisher alerts (balance, blob failures, proposal failures, etc.)
-need no toggle: those OTEL metrics simply don't exist on a node that isn't running
-a sequencer, so the alerts have no series to evaluate and stay silent.
-
-### Paging policy — only critical pages PagerDuty
-
-So on-call isn't woken for non-urgent issues, **only `severity: critical` should
-page**. Exactly four alerts are critical and warrant a page:
+All four alerts are `severity: critical` and warrant a page:
 
 - `LowL1PublisherBalance` — out of ETH, will stop publishing
 - `L2BlockHeightNotIncreasing` — node not following the chain
 - `WorldStateCriticalError` — state/DB corruption
 - `GethDown` — local L1 client down
 
-Everything else is `warning` (chat) or `info` (silent). `prometheus/alertmanager.example.yml`
-is a ready-to-fill routing config that:
-
-- routes **only `severity=critical` to PagerDuty**; warnings to Slack; info to a
-  black-hole receiver;
-- adds **inhibition rules** so a firing critical suppresses the related warnings
-  on the same node (one page, not a storm).
+`prometheus/alertmanager.example.yml` is a ready-to-fill routing config that sends
+every alert to PagerDuty, with an inhibition rule so a firing `GethDown` suppresses
+the L1-related criticals on the same node (one page, not a storm).
 
 Hardening against false pages:
 
 - The critical OTEL alerts go stale (stop evaluating) if the node dies, so they
   can't fire on phantom data.
-- `GethDown` and the geth warnings are gated on Pushgateway's `push_time_seconds`,
-  so a **dead `check-geth-health.sh` cron can never page** "geth down" on a stale
-  value — only fresh evidence (data pushed within 15m) can trigger them.
+- `GethDown` is gated on Pushgateway's `push_time_seconds`, so a **dead
+  `check-geth-health.sh` cron can never page** "geth down" on a stale value — only
+  fresh evidence (data pushed within 15m) can trigger it.
 
 ## Contract Addresses
 

@@ -3,6 +3,35 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-06-30 — Critical-only alerting (node-operator policy)
+
+Pared the alert set down to **page-worthy criticals only**. The dashboard is
+unchanged — softer signals are watched there, not alerted on.
+
+### Removed
+- **Entire `aztec_warning` group** — `L1BlockHeightNotIncreasing`,
+  `SequencerBlockProposalFailures`, `BlobPublishingFailures`,
+  `L1PublisherBalanceLow`, `PublisherBalanceDrainingFast`, `GethNodeSyncing`,
+  `GethLowPeerCount`, `GethBlockStalled`, and the rules added earlier this day
+  (`ChainReorg`, `LowSlotFillRate`, `AttestationFailures`, `L1TxPublishFailures`).
+- **Entire `aztec_provider` group** — `LowKeystoreQueue`, `NewDelegationDetected`.
+
+### Kept (the only alerts now, all `severity: critical`)
+- `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`,
+  `GethDown`.
+
+### Changed
+- `alertmanager.example.yml` simplified: every alert is critical, so it now routes
+  straight to PagerDuty with a single `GethDown`→L1-criticals inhibition rule (the
+  warning/info routes and warning-targeted inhibitions are gone).
+- README: dropped the Warning/Provider alert tables, relabeled the Metrics
+  Reference "Alert" column as "Suggested threshold" (dashboard-watching reference,
+  not the implemented alert set), and updated the paging-policy section.
+- Recording rules and all dashboard panels are unchanged — the removed signals are
+  still fully visible on Grafana.
+
+---
+
 ## 2026-06-30 — Grafana-standards refresh + coverage gaps vs Aztec's own monitoring
 
 Reviewed the dashboard against the **current Grafana dashboard standard** (Grafana
