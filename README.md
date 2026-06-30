@@ -189,28 +189,36 @@ curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 
 ### From Aztec Node (via OTEL Collector)
 
-Names below are the Prometheus-exported form (OTEL dots become underscores; the
-unit is appended as a suffix, e.g. `balance` + unit `eth` → `_balance_eth`).
-Verified against `aztec-packages` `telemetry-client/src/metrics.ts` on master
-(latest release line v4.1.2 / v4.2.0-nightly).
+Names below are the **exported Prometheus names**, cross-checked against the
+actual aztec-packages instrument definitions *and* Aztec's own production
+monitoring (`spartan/metrics/grafana/dashboards` and `.../alerts/rules.yaml`) on
+master (latest release line v4.1.2 / v4.2.0-nightly). OTEL dots become
+underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gwei`).
 
-| Metric | OTEL source name | Description | Alert |
-|--------|------------------|-------------|-------|
-| `aztec_l1_publisher_balance_eth` | `aztec.l1_publisher.balance` | Publisher ETH balance | < 0.2 ETH critical, < 1.0 ETH warning |
-| `aztec_archiver_block_height` | `aztec.archiver.block_height` | L2 block height (`aztec_status` selects tip/proven) | No increase in 15m |
-| `aztec_l1_block_height` | `aztec.l1.block_height` | L1 block height seen by node | No increase in 15m |
-| `aztec_peer_manager_peer_count_peers` | `aztec.peer_manager.peer_count` | P2P peer count | < 5 for 10m |
-| `aztec_l1_publisher_blob_tx_success` | `aztec.l1_publisher.blob_tx_success` | Successful blob submissions | - |
-| `aztec_l1_publisher_blob_tx_failure` | `aztec.l1_publisher.blob_tx_failure` | Failed blob submissions | Any in 15m |
-| `aztec_l1_publisher_gas_price_gwei` | `aztec.l1_publisher.gas_price` | L1 gas price (histogram, `_sum`/`_count`) | - |
-| `aztec_archiver_rollup_proof_count` | `aztec.archiver.rollup_proof_count` | Rollup proofs submitted on L1 | - |
-| `aztec_archiver_block_sync_count` | `aztec.archiver.block.sync_count` | Blocks synced from L1 | - |
+| Metric | Description | Alert |
+|--------|-------------|-------|
+| `aztec_l1_publisher_balance_eth` | Publisher ETH balance (gauge) | < 0.2 ETH critical, < 1.0 ETH warning |
+| `aztec_archiver_block_height` | L2 block height, split by `aztec_status` (`proposed`/`proven`/`finalized`) | tip not advancing 15m |
+| `aztec_archiver_l1_block_height` | L1 block height the archiver has seen | No increase in 15m |
+| `aztec_l1_publisher_blob_tx_success` | Successful blob submissions (UpDownCounter → gauge) | - |
+| `aztec_l1_publisher_blob_tx_failure` | Failed blob submissions (UpDownCounter → gauge) | Any in 15m |
+| `aztec_l1_publisher_gas_price_gwei_*` | L1 gas price (histogram → `_sum`/`_count`/`_bucket`) | - |
+| `aztec_sequencer_block_proposal_failed_count` | Block proposal/build failures, label `aztec_error_type` | > 1 in 15m (excl. `insufficient_txs`) |
+| `aztec_world_state_critical_error_count` | Fatal world-state/DB errors | Any in 15m |
+| `aztec_archiver_rollup_proof_count` | Rollup proofs submitted on L1 | - |
+| `aztec_archiver_block_sync_count` | Blocks synced from L1 | - |
 
-> **Sequencer slot/proposal metrics** (`aztec.sequencer.slot.total_count`,
-> `aztec.sequencer.slot.filled_count`, `aztec.sequencer.block.proposal_failed_count`)
-> exist in the latest source but are OTEL *counters* — the exported Prometheus
-> name may carry a `_total` suffix depending on your collector. Confirm the exact
-> name on your node before alerting on proposal failure rate.
+> **`aztec_status` gotcha:** `aztec_archiver_block_height` is split by the
+> `aztec_status` attribute with values `proposed` / `proven` / `finalized` — there
+> is **no empty-string series**. A selector like `{aztec_status=""}` matches
+> nothing, so use `aztec_status="proposed"` for the chain tip (this is what
+> Aztec's own "no new blocks" alert uses).
+>
+> **Peer count:** `aztec_peer_manager_peer_count` exists in source but is created
+> without a unit and isn't referenced by any Aztec dashboard/alert, so its exact
+> exported suffix can't be confirmed. We don't alert on it here to avoid a
+> silently non-matching rule; we use the proposal-failure / world-state signals
+> Aztec itself alerts on instead.
 
 ### From Cron Scripts (via Pushgateway)
 
@@ -242,7 +250,8 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 | Alert | Condition | Action |
 |-------|-----------|--------|
 | `LowL1PublisherBalance` | Balance < 0.2 ETH for 5m | Top up publisher address with ETH |
-| `L2BlockHeightNotIncreasing` | No L2 blocks in 15m (for 5m) | Check archiver logs, L1 RPC, consider restart |
+| `L2BlockHeightNotIncreasing` | Proposed tip not advancing in 15m (for 5m) | Check archiver logs, L1 RPC, consider restart |
+| `WorldStateCriticalError` | Any world-state critical error in 15m (for 1m) | Check logs; may need resync from snapshot |
 | `GethDown` | `aztec_geth_up == 0` for 5m | Check geth process, RPC, and logs |
 
 ### Warning
@@ -250,7 +259,7 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 | Alert | Condition | Action |
 |-------|-----------|--------|
 | `L1BlockHeightNotIncreasing` | No L1 block updates in 15m (for 10m) | Verify L1 RPC / `ETHEREUM_HOSTS` |
-| `LowPeerCount` | < 5 P2P peers for 10m | Check P2P ports, firewall, bootnodes |
+| `SequencerBlockProposalFailures` | > 1 proposal failure in 15m, excl. no-txs (for 5m) | Check `aztec_error_type`, resources, peers, L1 |
 | `BlobPublishingFailures` | Any blob tx failures in 15m (for 5m) | Check L1 gas prices and publisher balance |
 | `L1PublisherBalanceLow` | Balance 0.2–1.0 ETH for 30m | Plan to top up soon |
 | `PublisherBalanceDrainingFast` | < 24h balance remaining for 15m | Investigate burn rate, top up |

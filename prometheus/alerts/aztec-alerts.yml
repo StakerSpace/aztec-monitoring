@@ -1,20 +1,35 @@
 # Aztec Sequencer Alert Rules
 #
-# Metric names verified against aztec-packages telemetry-client/src/metrics.ts
-# on master (latest release line v4.1.2 / v4.2.0-nightly).
+# Metric names cross-checked against the ACTUAL aztec-packages source AND
+# Aztec's own production monitoring on master (latest release line
+# v4.1.2 / v4.2.0-nightly):
+#   - instrument definitions:
+#       yarn-project/sequencer-client/src/publisher/sequencer-publisher-metrics.ts
+#       yarn-project/p2p/src/services/peer-manager/metrics.ts
+#       yarn-project/telemetry-client/src/metrics.ts
+#   - exported names confirmed verbatim against Aztec's own dashboards & rules:
+#       spartan/metrics/grafana/{dashboards,alerts/rules.yaml}
 #
-# Confirmed exported & used below:
-#   aztec_l1_publisher_balance_eth   (aztec.l1_publisher.balance + 'eth' unit)
-#   aztec_archiver_block_height      (aztec.archiver.block_height)
-#   aztec_l1_block_height            (aztec.l1.block_height)
-#   aztec_l1_publisher_blob_tx_*     (aztec.l1_publisher.blob_tx_success/failure)
-#   aztec_peer_manager_peer_count_peers (aztec.peer_manager.peer_count + 'peers' unit)
+# Confirmed exported names used below:
+#   aztec_l1_publisher_balance_eth              (gauge, 'eth' suffix)
+#   aztec_archiver_block_height                 (gauge, split by aztec_status)
+#   aztec_archiver_l1_block_height              (gauge)
+#   aztec_l1_publisher_blob_tx_success/failure  (UpDownCounter -> gauge, no _total)
+#   aztec_l1_publisher_gas_price_gwei_*         (histogram, 'gwei' suffix)
+#   aztec_sequencer_block_proposal_failed_count (gauge, label aztec_error_type)
+#   aztec_world_state_critical_error_count      (counter)
 #
-# NOTE: sequencer slot/proposal counters (aztec.sequencer.slot.total_count,
-# aztec.sequencer.slot.filled_count, aztec.sequencer.block.proposal_failed_count)
-# exist in source but are OTEL *counters*; the exact Prometheus name may carry a
-# `_total` suffix depending on collector config. Verify the exported name on your
-# node before adding a proposal-failure alert.
+# IMPORTANT: aztec_archiver_block_height is split by the aztec_status attribute
+# (values: proposed / proven / finalized). There is NO empty-string series, so a
+# selector like {aztec_status=""} matches nothing and an alert built on it never
+# fires. Use aztec_status="proposed" for the chain tip - this is exactly what
+# Aztec's own "Chain - no new blocks" alert uses.
+#
+# Peer count (aztec_peer_manager_peer_count) is created without a unit in source
+# and is not referenced by any Aztec dashboard/alert, so its exact exported name
+# can't be confirmed; we deliberately do NOT alert on it (a wrong name would be a
+# silently non-matching, false-comfort rule). We use the proposal-failure and
+# world-state signals Aztec itself alerts on instead.
 
 groups:
   - name: aztec_critical
@@ -31,24 +46,38 @@ groups:
           description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Refill immediately."
           runbook: "Top up publisher address with at least 1 ETH"
 
-      # Node stuck - not processing blocks
+      # Node stuck - not processing blocks.
+      # aztec_status="proposed" = chain tip (matches Aztec's own no-new-blocks alert).
       - alert: L2BlockHeightNotIncreasing
-        expr: increase(aztec_archiver_block_height{aztec_status=""}[15m]) == 0
+        expr: increase(aztec_archiver_block_height{aztec_status="proposed"}[15m]) == 0
         for: 5m
         labels:
           severity: critical
           component: archiver
         annotations:
           summary: "No L2 blocks in 15m ({{ $labels.job }})"
-          description: "{{ $labels.job }} has not processed any blocks. May be stuck or out of sync."
+          description: "{{ $labels.job }} has not advanced the proposed tip in 15m. May be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC, consider restart"
+
+      # World state corruption / fatal DB error - node cannot build or sync safely.
+      - alert: WorldStateCriticalError
+        expr: increase(aztec_world_state_critical_error_count[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: world_state
+        annotations:
+          summary: "World state critical error ({{ $labels.job }})"
+          description: "{{ $value }} critical world-state error(s) on {{ $labels.job }} in 15m."
+          runbook: "Check node logs for world-state errors; may need resync from snapshot"
 
 
   - name: aztec_warning
     rules:
-      # L1 connection issues
+      # L1 connection issues. aztec_archiver_l1_block_height is the L1 tip the
+      # node's archiver has seen (the metric Aztec's own dashboards use).
       - alert: L1BlockHeightNotIncreasing
-        expr: increase(aztec_l1_block_height[15m]) == 0
+        expr: increase(aztec_archiver_l1_block_height[15m]) == 0
         for: 10m
         labels:
           severity: warning
@@ -58,19 +87,21 @@ groups:
           description: "No L1 block updates on {{ $labels.job }} in 15 minutes."
           runbook: "Verify L1 RPC endpoint, check ETHEREUM_HOSTS config"
 
-      # P2P network health - too few peers risks missing proposals/attestations.
-      # aztec_peer_manager_peer_count_peers is a gauge (no-data-safe: if the metric
-      # is absent on your node this simply never fires). Recommended by Aztec docs.
-      - alert: LowPeerCount
-        expr: aztec_peer_manager_peer_count_peers < 5
-        for: 10m
+      # Block building/proposal failing (excludes the benign no-txs case, exactly
+      # as Aztec's own "block build failed" alert does). Confirmed exported name.
+      - alert: SequencerBlockProposalFailures
+        expr: |
+          sum by (job) (
+            increase(aztec_sequencer_block_proposal_failed_count{aztec_error_type!="insufficient_txs"}[15m])
+          ) > 1
+        for: 5m
         labels:
           severity: warning
-          component: p2p
+          component: sequencer
         annotations:
-          summary: "Low P2P peer count ({{ $labels.job }})"
-          description: "Only {{ $value }} peers on {{ $labels.job }}. Risk of missed proposals/attestations."
-          runbook: "Check P2P_TCP/UDP port reachability, firewall, and bootnode config"
+          summary: "Sequencer block proposals failing ({{ $labels.job }})"
+          description: "{{ $value }} block proposal failure(s) on {{ $labels.job }} in 15m (excluding insufficient_txs)."
+          runbook: "Check sequencer logs and aztec_error_type; verify resources, peers, L1 connectivity"
 
       # Blob publishing failures
       - alert: BlobPublishingFailures
