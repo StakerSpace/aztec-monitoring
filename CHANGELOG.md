@@ -30,6 +30,21 @@ out of date in places.
   `<0.2`, `GethNodeDown` vs actual `GethDown`). Rewrote the Metrics Reference,
   Recording Rules, and Key Alerts tables to match the YAML exactly.
 
+### Alerting / paging policy
+- **Only `severity: critical` pages.** Added `prometheus/alertmanager.example.yml`
+  routing critical → PagerDuty, warning → Slack, info → black-hole, with
+  inhibition rules so a firing critical suppresses the related warnings on the
+  same node (one page, not a storm). The four paging alerts are
+  `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`,
+  `GethDown`; everything else is warning/info.
+- **No stale-data false pages.** `GethDown` (and the geth warnings) read a
+  Pushgateway value, which Pushgateway serves forever even if the cron dies.
+  Gated them on Pushgateway's built-in `push_time_seconds` so they fire only on
+  fresh evidence (pushed within 15m) — a dead `check-geth-health.sh` can no longer
+  page "geth down". Moved `GethDown` into the `aztec_critical` group.
+- `GethBlockStalled` widened to a 15m window (robust to the 5m push cadence) with
+  a `geth_up == 1` guard so it no longer duplicates `GethDown`.
+
 ### Added
 - **`WorldStateCriticalError`** (critical) — fires on
   `aztec_world_state_critical_error_count` increase; mirrors a signal Aztec

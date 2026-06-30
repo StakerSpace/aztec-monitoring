@@ -21,6 +21,7 @@ aztec-monitoring/
 ├── prometheus/
 │   ├── prometheus.yml                 # Prometheus scrape configuration
 │   ├── recording-rules.yml            # Pre-computed metric rules
+│   ├── alertmanager.example.yml       # Routing: critical→PagerDuty, warning→chat
 │   └── alerts/
 │       └── aztec-alerts.yml           # Alert rules (critical, warning, provider)
 └── scripts/
@@ -283,7 +284,7 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 | `PublisherBalanceDrainingFast` | < 24h balance remaining for 15m | Investigate burn rate, top up |
 | `GethNodeSyncing` | `aztec_geth_syncing == 1` for 30m | Wait for sync, check disk I/O / network |
 | `GethLowPeerCount` | Geth up with < 3 peers for 10m | Check geth networking, firewall, bootnodes |
-| `GethBlockStalled` | < 10 new geth blocks per 5m, for 10m | Check geth sync status and peers |
+| `GethBlockStalled` | < 20 new geth blocks per 15m (geth up & data fresh), for 10m | Check geth sync status and peers |
 
 ### Provider
 
@@ -309,6 +310,32 @@ mechanisms keep provider alerts quiet on nodes that aren't staking providers:
 The sequencer/publisher alerts (balance, blob failures, proposal failures, etc.)
 need no toggle: those OTEL metrics simply don't exist on a node that isn't running
 a sequencer, so the alerts have no series to evaluate and stay silent.
+
+### Paging policy — only critical pages PagerDuty
+
+So on-call isn't woken for non-urgent issues, **only `severity: critical` should
+page**. Exactly four alerts are critical and warrant a page:
+
+- `LowL1PublisherBalance` — out of ETH, will stop publishing
+- `L2BlockHeightNotIncreasing` — node not following the chain
+- `WorldStateCriticalError` — state/DB corruption
+- `GethDown` — local L1 client down
+
+Everything else is `warning` (chat) or `info` (silent). `prometheus/alertmanager.example.yml`
+is a ready-to-fill routing config that:
+
+- routes **only `severity=critical` to PagerDuty**; warnings to Slack; info to a
+  black-hole receiver;
+- adds **inhibition rules** so a firing critical suppresses the related warnings
+  on the same node (one page, not a storm).
+
+Hardening against false pages:
+
+- The critical OTEL alerts go stale (stop evaluating) if the node dies, so they
+  can't fire on phantom data.
+- `GethDown` and the geth warnings are gated on Pushgateway's `push_time_seconds`,
+  so a **dead `check-geth-health.sh` cron can never page** "geth down" on a stale
+  value — only fresh evidence (data pushed within 15m) can trigger them.
 
 ## Contract Addresses
 
