@@ -3,7 +3,15 @@
 # Pre-compute expensive queries for dashboard performance.
 # Rules preserve the 'job' label for multi-node setups.
 #
-# Only uses metrics confirmed to exist in the actual OTEL export.
+# Metric names verified against the actual aztec-packages instrument definitions
+# AND Aztec's own monitoring (spartan/metrics/grafana) on master (v4.1.2):
+#   aztec_l1_publisher_balance_eth          - gauge, 'eth' suffix (confirmed)
+#   aztec_l1_publisher_gas_price_gwei_sum   - histogram, 'gwei' suffix; the
+#   aztec_l1_publisher_gas_price_gwei_count   matching _bucket series appears
+#                                             verbatim in Aztec's own dashboards,
+#                                             so _sum/_count exist too.
+# These metrics only exist on sequencer/publisher nodes, so the rules below
+# simply produce no series on non-publisher nodes (no false data).
 
 groups:
   - name: aztec_recording

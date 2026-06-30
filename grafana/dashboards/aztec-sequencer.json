@@ -85,7 +85,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "aztec_archiver_block_height{aztec_status=\"\",job=~\"$job\"}",
+          "expr": "aztec_archiver_block_height{aztec_status=\"proposed\",job=~\"$job\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -196,7 +196,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "aztec_l1_block_height{job=~\"$job\"}",
+          "expr": "aztec_archiver_l1_block_height{job=~\"$job\"}",
           "legendFormat": "{{job}}",
           "refId": "A"
         }
@@ -250,7 +250,7 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "aztec_archiver_block_height{aztec_status=\"\",job=~\"$job\"}",
+          "expr": "aztec_archiver_block_height{aztec_status=\"proposed\",job=~\"$job\"}",
           "legendFormat": "L2 tip {{job}}",
           "refId": "A"
         },
@@ -260,7 +260,7 @@
           "refId": "B"
         },
         {
-          "expr": "aztec_l1_block_height{job=~\"$job\"}",
+          "expr": "aztec_archiver_l1_block_height{job=~\"$job\"}",
           "legendFormat": "L1 {{job}}",
           "refId": "C"
         }

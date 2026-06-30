@@ -1,0 +1,83 @@
+# Example Alertmanager routing for the Aztec monitoring alerts.
+#
+# GOAL: page (PagerDuty) ONLY on severity=critical. Warnings go to chat, info is
+# recorded but never notifies. Inhibition suppresses lower-severity alerts that
+# are already implied by a firing critical, so you get ONE page, not a storm.
+#
+# The four critical (page-worthy) alerts are:
+#   LowL1PublisherBalance, L2BlockHeightNotIncreasing, WorldStateCriticalError, GethDown
+# Everything else is severity: warning (chat) or info (silent).
+#
+# Usage: copy to alertmanager.yml, fill in the secrets, validate, and reload:
+#   amtool check-config alertmanager.yml
+#   curl -X POST http://localhost:9093/-/reload
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: chat-warning            # default leaf: never pages
+  group_by: ['alertname', 'job', 'instance']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # --- ONLY this branch reaches PagerDuty ---
+    - matchers:
+        - severity = "critical"
+      receiver: pagerduty-critical
+      group_wait: 10s               # page fast
+      repeat_interval: 1h           # re-page hourly while unresolved
+      continue: false
+
+    # Warnings -> chat only, never PagerDuty.
+    - matchers:
+        - severity = "warning"
+      receiver: chat-warning
+      continue: false
+
+    # Info (e.g. NewDelegationDetected) -> recorded in the UI, no notification.
+    - matchers:
+        - severity = "info"
+      receiver: "null"
+
+receivers:
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - routing_key: "<YOUR_PAGERDUTY_EVENTS_V2_ROUTING_KEY>"
+        severity: critical
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          runbook: '{{ .CommonAnnotations.runbook }}'
+          firing: '{{ .Alerts.Firing | len }} alert(s)'
+
+  - name: chat-warning
+    slack_configs:
+      - api_url: "<YOUR_SLACK_WEBHOOK_URL>"
+        channel: "#aztec-alerts"
+        send_resolved: true
+        title: '[{{ .CommonLabels.severity }}] {{ .CommonAnnotations.summary }}'
+        text: >-
+          {{ range .Alerts }}{{ .Annotations.description }}
+          Runbook: {{ .Annotations.runbook }}
+          {{ end }}
+
+  # Black-hole receiver for info-level alerts (no notifier configured).
+  - name: "null"
+
+inhibit_rules:
+  # A firing critical silences warnings on the SAME node/job, so a node that is
+  # clearly broken pages once instead of also spamming every related warning.
+  - source_matchers: [ 'severity = "critical"' ]
+    target_matchers: [ 'severity = "warning"' ]
+    equal: ['job']
+
+  # Geth being down implies its own peer/sync/stalled warnings.
+  - source_matchers: [ 'alertname = "GethDown"' ]
+    target_matchers: [ 'component = "geth"', 'severity = "warning"' ]
+    equal: ['job', 'instance']
+
+  # Critically-low publisher balance implies the soft balance/burn warnings.
+  - source_matchers: [ 'alertname = "LowL1PublisherBalance"' ]
+    target_matchers: [ 'component = "publisher"', 'severity = "warning"' ]
+    equal: ['job']
