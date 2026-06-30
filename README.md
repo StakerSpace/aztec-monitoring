@@ -189,17 +189,28 @@ curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 
 ### From Aztec Node (via OTEL Collector)
 
-| Metric | Description | Alert Threshold |
-|--------|-------------|-----------------|
-| `aztec_l1_publisher_balance_eth` | Publisher ETH balance | < 0.5 ETH (critical), < 1.0 ETH (warning) |
-| `aztec_sequencer_current_state` | Sequencer state (1=healthy) | != 1 for 2m |
-| `aztec_archiver_block_height` | L2 block height | No increase in 15m |
-| `aztec_l1_block_height` | L1 block height | No increase in 15m |
-| `aztec_peer_manager_peer_count_peers` | P2P peer count | < 5 for 10m |
-| `aztec_sequencer_slot_total_count` | Block proposal attempts | - |
-| `aztec_sequencer_slot_filled_count` | Successful proposals | > 5% failure rate |
-| `aztec_l1_publisher_blob_tx_success` | Successful blob submissions | - |
-| `aztec_l1_publisher_blob_tx_failure` | Failed blob submissions | Any failures |
+Names below are the Prometheus-exported form (OTEL dots become underscores; the
+unit is appended as a suffix, e.g. `balance` + unit `eth` → `_balance_eth`).
+Verified against `aztec-packages` `telemetry-client/src/metrics.ts` on master
+(latest release line v4.1.2 / v4.2.0-nightly).
+
+| Metric | OTEL source name | Description | Alert |
+|--------|------------------|-------------|-------|
+| `aztec_l1_publisher_balance_eth` | `aztec.l1_publisher.balance` | Publisher ETH balance | < 0.2 ETH critical, < 1.0 ETH warning |
+| `aztec_archiver_block_height` | `aztec.archiver.block_height` | L2 block height (`aztec_status` selects tip/proven) | No increase in 15m |
+| `aztec_l1_block_height` | `aztec.l1.block_height` | L1 block height seen by node | No increase in 15m |
+| `aztec_peer_manager_peer_count_peers` | `aztec.peer_manager.peer_count` | P2P peer count | < 5 for 10m |
+| `aztec_l1_publisher_blob_tx_success` | `aztec.l1_publisher.blob_tx_success` | Successful blob submissions | - |
+| `aztec_l1_publisher_blob_tx_failure` | `aztec.l1_publisher.blob_tx_failure` | Failed blob submissions | Any in 15m |
+| `aztec_l1_publisher_gas_price_gwei` | `aztec.l1_publisher.gas_price` | L1 gas price (histogram, `_sum`/`_count`) | - |
+| `aztec_archiver_rollup_proof_count` | `aztec.archiver.rollup_proof_count` | Rollup proofs submitted on L1 | - |
+| `aztec_archiver_block_sync_count` | `aztec.archiver.block.sync_count` | Blocks synced from L1 | - |
+
+> **Sequencer slot/proposal metrics** (`aztec.sequencer.slot.total_count`,
+> `aztec.sequencer.slot.filled_count`, `aztec.sequencer.block.proposal_failed_count`)
+> exist in the latest source but are OTEL *counters* — the exported Prometheus
+> name may carry a `_total` suffix depending on your collector. Confirm the exact
+> name on your node before alerting on proposal failure rate.
 
 ### From Cron Scripts (via Pushgateway)
 
@@ -218,44 +229,41 @@ curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 
 | Rule | Description |
 |------|-------------|
-| `aztec:blocks_per_minute` | Block processing rate |
-| `aztec:proposal_success_rate` | Block proposal success percentage |
-| `aztec:l1_tx_success_rate` | L1 transaction success rate |
-| `aztec:cpu_usage_percent` | CPU usage (4-core normalized) |
-| `aztec:memory_usage_gb` | Memory usage in GB |
-| `aztec:sync_progress` | Sync completion ratio |
-| `aztec:publisher_balance_burn_rate_per_hour` | ETH consumed per hour |
+| `aztec:publisher_balance_burn_rate_per_hour` | ETH consumed per hour (negative = draining) |
 | `aztec:publisher_balance_hours_remaining` | Estimated hours until balance hits zero |
+| `aztec:l1_gas_price_avg_gwei` | L1 gas price moving average (from histogram) |
 
 ## Key Alerts
+
+These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 
 ### Critical
 
 | Alert | Condition | Action |
 |-------|-----------|--------|
-| `LowL1PublisherBalance` | Balance < 0.5 ETH for 5m | Top up publisher address with ETH |
-| `SequencerNotHealthy` | State != 1 for 2m | Check sequencer logs immediately |
-| `L2BlockHeightNotIncreasing` | No blocks in 15m (for 5m) | Restart node, check sync status |
-| `GethNodeDown` | Geth unresponsive for 2m | Check geth process and logs |
+| `LowL1PublisherBalance` | Balance < 0.2 ETH for 5m | Top up publisher address with ETH |
+| `L2BlockHeightNotIncreasing` | No L2 blocks in 15m (for 5m) | Check archiver logs, L1 RPC, consider restart |
+| `GethDown` | `aztec_geth_up == 0` for 5m | Check geth process, RPC, and logs |
 
 ### Warning
 
 | Alert | Condition | Action |
 |-------|-----------|--------|
-| `LowPeerCount` | < 5 peers for 10m | Check network config, firewall rules |
-| `HighBlockProposalFailureRate` | > 5% failures for 5m | Check node resources and connectivity |
-| `BlobPublishingFailures` | Any blob tx failures for 5m | Check L1 gas settings |
-| `L1PublisherBalanceLow` | Balance 0.5-1.0 ETH for 30m | Plan to top up soon |
-| `PublisherBalanceDrainingFast` | < 24h remaining for 15m | Investigate burn rate, top up |
-| `GethNodeSyncing` | Syncing for 30m+ | Wait or check sync progress |
-| `GethBlockStalled` | No new Geth blocks for 15m | Check Geth peers and network |
+| `L1BlockHeightNotIncreasing` | No L1 block updates in 15m (for 10m) | Verify L1 RPC / `ETHEREUM_HOSTS` |
+| `LowPeerCount` | < 5 P2P peers for 10m | Check P2P ports, firewall, bootnodes |
+| `BlobPublishingFailures` | Any blob tx failures in 15m (for 5m) | Check L1 gas prices and publisher balance |
+| `L1PublisherBalanceLow` | Balance 0.2–1.0 ETH for 30m | Plan to top up soon |
+| `PublisherBalanceDrainingFast` | < 24h balance remaining for 15m | Investigate burn rate, top up |
+| `GethNodeSyncing` | `aztec_geth_syncing == 1` for 30m | Wait for sync, check disk I/O / network |
+| `GethLowPeerCount` | Geth up with < 3 peers for 10m | Check geth networking, firewall, bootnodes |
+| `GethBlockStalled` | < 10 new geth blocks per 5m, for 10m | Check geth sync status and peers |
 
-### System
+### Provider
 
 | Alert | Condition | Action |
 |-------|-----------|--------|
-| `HighCPUUsage` | > 2.8 cores for 10m | Check for runaway processes |
-| `HighMemoryUsage` | > 8GB for 5m | Check for memory leaks |
+| `LowKeystoreQueue` | `aztec_provider_queue_length < 5` for 1h | Generate & register new keystores |
+| `NewDelegationDetected` | `aztec_provider_queue_decrease > 0` (info) | Configure coinbase for new sequencer |
 
 ## Contract Addresses
 
@@ -275,9 +283,9 @@ curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 
 ## Links
 
-- [Aztec Monitoring Docs](https://docs.aztec.network/network/operation/monitoring)
-- [Key Metrics Reference](https://docs.aztec.network/network/operation/metrics_reference)
-- [Staking Provider Guide](https://docs.aztec.network/network/operation/sequencer_management/become_a_staking_provider)
+- [Aztec Monitoring & Observability](https://docs.aztec.network/operate/operators/monitoring)
+- [Key Metrics Reference](https://docs.aztec.network/operate/operators/monitoring/metrics-reference)
+- [Running a Sequencer](https://docs.aztec.network/the_aztec_network/guides/run_nodes/how_to_run_sequencer)
 
 ---
 
