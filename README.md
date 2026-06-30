@@ -107,7 +107,23 @@ curl -X POST http://localhost:9090/-/reload
 2. Go to **Dashboards > Import**
 3. Upload `grafana/dashboards/aztec-sequencer.json`
 
-The dashboard includes panels for: publisher ETH balance & burn rate, ETH hours remaining, L2/L1 block heights, block production over time, blob tx results, rollup proofs & synced blocks, L1 gas price, local Geth health, and the provider keystore queue.
+The dashboard is built to the current Grafana dashboard standard (`schemaVersion: 42`,
+Grafana 13.x — the final v1 schema), with a templated `${datasource}`, `job` and
+`instance` query variables, and a `description` + `unit` on every panel (the
+[`dashboard-linter`](https://github.com/grafana/dashboard-linter) rule set). It is
+organized into rows:
+
+- **Node Status** — publisher ETH balance, L2 tip/proven heights, ETH hours
+  remaining, L1 height, peer count, mempool size, slot fill rate, world-state errors
+- **Block Production & L1 Transactions** — block height over time, blob tx results,
+  rollup proofs & synced blocks, chain reorgs
+- **Consensus & Attestations** — slot fill rate over time, attestation collection
+  time (avg + p95), attestation failures
+- **Sequencer & Publish Health** — block proposal failures (by error type), L1 tx
+  failures (reverted/cancelled/not-mined)
+- **ETH Balance & L1 Costs** — publisher balance, burn rate, L1 gas price
+- **Local Geth Node** — status, block number, peers, sync
+- **Provider Operations** — keystore queue, new delegations
 
 ### 5. Configure monitoring scripts
 
@@ -224,6 +240,14 @@ underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gw
 | `aztec_world_state_critical_error_count` | Fatal world-state/DB errors | Any in 15m |
 | `aztec_archiver_rollup_proof_count` | Rollup proofs submitted on L1 | - |
 | `aztec_archiver_block_sync_count` | Blocks synced from L1 | - |
+| `aztec_archiver_prune_count` | Archiver chain prunes = L2 reorgs | > 1 in 15m |
+| `aztec_peer_manager_peer_count_peers` | Connected Aztec P2P peers (gauge) | - |
+| `aztec_mempool_tx_count` | Transactions in the node mempool (gauge) | - |
+| `aztec_sequencer_slot_filled_count` / `aztec_sequencer_slot_total_count` | Slots filled vs assigned (slot fill rate) | fill rate < 80% over 1h |
+| `aztec_sequencer_attestations_collect_duration_milliseconds_*` | Time to collect committee attestations (histogram → `_sum`/`_count`/`_bucket`) | - |
+| `aztec_sequencer_attestations_collected_count` | Attestations collected for proposals | - |
+| `aztec_validator_attestation_failed_node_issue_count` / `aztec_validator_attestation_failed_bad_proposal_count` | Attestations this node failed to produce | node-issue any in 15m |
+| `aztec_l1_tx_reverted_count` / `aztec_l1_tx_cancelled_count` / `aztec_l1_tx_not_mined_count` | L1 publish failure modes | sum > 1 in 15m |
 
 > **`aztec_status` gotcha:** `aztec_archiver_block_height` is split by the
 > `aztec_status` attribute with values `proposed` / `proven` / `finalized` — there
@@ -231,11 +255,13 @@ underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gw
 > nothing, so use `aztec_status="proposed"` for the chain tip (this is what
 > Aztec's own "no new blocks" alert uses).
 >
-> **Peer count:** `aztec_peer_manager_peer_count` exists in source but is created
-> without a unit and isn't referenced by any Aztec dashboard/alert, so its exact
-> exported suffix can't be confirmed. We don't alert on it here to avoid a
-> silently non-matching rule; we use the proposal-failure / world-state signals
-> Aztec itself alerts on instead.
+> **Peer count:** the exported name is `aztec_peer_manager_peer_count_peers` (the
+> instrument is emitted with a `_peers` suffix) — confirmed verbatim against
+> Aztec's own `network-tps` dashboard. The dashboard now charts it as a "Peer
+> Count" stat. We still don't *alert* on a fixed peer threshold (a healthy floor
+> is deployment-specific); the proposal-failure, slot-fill, attestation, and
+> world-state signals Aztec itself alerts on are better "node is unhealthy"
+> proxies and we cover those instead.
 
 ### From Cron Scripts (via Pushgateway)
 
@@ -285,6 +311,10 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 | `GethNodeSyncing` | `aztec_geth_syncing == 1` for 30m | Wait for sync, check disk I/O / network |
 | `GethLowPeerCount` | Geth up with < 3 peers for 10m | Check geth networking, firewall, bootnodes |
 | `GethBlockStalled` | < 20 new geth blocks per 15m (geth up & data fresh), for 10m | Check geth sync status and peers |
+| `ChainReorg` | `aztec_archiver_prune_count` increases > 1 in 15m (for 5m) | Check L1 finality/peers; investigate if reorgs are sustained |
+| `LowSlotFillRate` | Slots filled / assigned < 80% over 1h (with proposer duties, for 15m) | Check missed proposals: peers, attestation latency, build failures |
+| `AttestationFailures` | `aztec_validator_attestation_failed_node_issue_count` > 0 in 15m (for 10m) | Check node health, resources, peers, attestation-collection latency |
+| `L1TxPublishFailures` | reverted + cancelled + not-mined L1 txs > 1 in 15m (for 10m) | Check L1 gas/nonce, publisher balance, L1 RPC |
 
 ### Provider
 

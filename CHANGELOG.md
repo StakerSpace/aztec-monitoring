@@ -3,6 +3,67 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-06-30 — Grafana-standards refresh + coverage gaps vs Aztec's own monitoring
+
+Reviewed the dashboard against the **current Grafana dashboard standard** (Grafana
+13.x / `schemaVersion 42`, the final v1 schema) and the
+[`dashboard-linter`](https://github.com/grafana/dashboard-linter) rule set, and
+re-checked our metric coverage against **Aztec's own production monitoring**
+(`spartan/metrics/grafana/{dashboards,alerts/rules.yaml}` on `master`). Every new
+metric name below was confirmed verbatim against Aztec's dashboards/alerts.
+
+### Grafana standards (dashboard JSON)
+- **Bumped `schemaVersion` 38 → 42.** 38 corresponds to Grafana 9.4 (Feb 2023); 42
+  is the current and final v1 dashboard schema (future schema work moves to the
+  experimental v2/app-platform model, which is one-way and not used here).
+- **Removed legacy `style: "dark"`** (superseded by Grafana theming) and added the
+  standard built-in "Annotations & Alerts" annotation and a `preload: false` flag.
+- **Added an `instance` template variable** (`label_values(... , instance)`) and
+  `instance=~"$instance"` matchers on the node OTEL metrics, alongside the existing
+  `${datasource}` and `job` variables (`template-datasource`/`-job`/`-instance`
+  linter rules).
+- **Every panel now has a `description` and a `unit`** (`panel-title-description`,
+  `panel-units` rules) — previously 11 panels had no description and 7 had no unit.
+- **Counter/rate queries now use `$__rate_interval`** instead of a hard-coded `[1h]`
+  (`target-rate-interval` rule), so they stay correct when zooming.
+- `liveNow` was left as-is — contrary to a common belief it is **not** deprecated in
+  any current Grafana docs; it's a niche Grafana Live toggle.
+
+### Added (dashboard panels for signals Aztec monitors but we didn't)
+- **Peer Count** — `aztec_peer_manager_peer_count_peers`. This also resolves the
+  earlier "exact exported name unconfirmable" note: the instrument is exported with
+  a `_peers` suffix (confirmed against Aztec's `network-tps` dashboard).
+- **Mempool size** — `aztec_mempool_tx_count`.
+- **Slot fill rate** (stat + time series) — `aztec_sequencer_slot_filled_count` /
+  `aztec_sequencer_slot_total_count`.
+- **Attestation collection time** (avg + p95) —
+  `aztec_sequencer_attestations_collect_duration_milliseconds_{sum,count,bucket}`.
+- **Attestation failures** — `aztec_validator_attestation_failed_{node_issue,bad_proposal}_count`.
+- **Chain reorgs** — `aztec_archiver_prune_count`.
+- **Block proposal failures** (by `aztec_error_type`) —
+  `aztec_sequencer_block_proposal_failed_count` (previously alerted-on but had no panel).
+- **World-state critical errors** stat — `aztec_world_state_critical_error_count`
+  (previously alerted-on but had no panel).
+- **L1 tx failure modes** — `aztec_l1_tx_{reverted,cancelled,not_mined}_count`.
+
+### Added (alerts mirroring Aztec's own `rules.yaml`, all `warning`)
+- **`ChainReorg`** — `increase(aztec_archiver_prune_count[15m]) > 1`.
+- **`LowSlotFillRate`** — filled/assigned slots < 80% over 1h, gated on having
+  proposer duties (assigned slots > 0) so it's silent on non-proposing nodes.
+- **`AttestationFailures`** — `aztec_validator_attestation_failed_node_issue_count` > 0 in 15m.
+- **`L1TxPublishFailures`** — reverted + cancelled + not-mined L1 txs > 1 in 15m.
+
+These stay `warning` (chat, not page) per the existing "only critical pages" policy;
+they have no series on nodes that aren't running a sequencer/validator, so they stay
+silent there.
+
+### Layout
+- Reorganized panels into a logical top-to-bottom progression with two new rows —
+  **Consensus & Attestations** and **Sequencer & Publish Health** — and a second
+  status line (peers, mempool, slot fill, world-state errors) for at-a-glance health.
+
+---
+
 ## 2026-06-30 — Alignment with Aztec v4.1.x + false-positive hardening
 
 Verified every metric used by the alerts, recording rules, dashboard, and cron

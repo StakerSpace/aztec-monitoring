@@ -198,6 +198,80 @@ groups:
           description: "Fewer than 20 new geth blocks in 15 minutes."
           runbook: "Check geth sync status and peer connections"
 
+      # L2 reorg. aztec_archiver_prune_count increments when the archiver prunes
+      # (rolls back) blocks. Mirrors Aztec's own "Chain - reorg" alert, which
+      # fires on increase(aztec_archiver_prune_count[5m]) > 1; widened to 15m here
+      # to be robust to scrape cadence. Sequencer/archiver metric, so it has no
+      # series on non-sequencer nodes and stays silent there.
+      - alert: ChainReorg
+        expr: increase(aztec_archiver_prune_count[15m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: archiver
+        annotations:
+          summary: "L2 chain reorg detected ({{ $labels.job }})"
+          description: "{{ $value }} archiver prune(s) on {{ $labels.job }} in 15m. The L2 tip rolled back."
+          runbook: "Check L1 finality, peers, and archiver logs; expect transient reorgs, investigate if sustained"
+
+      # Low slot fill rate. aztec_sequencer_slot_filled_count / _total_count is the
+      # share of this validator's assigned slots that produced a block. Mirrors
+      # Aztec's own "Sequencer - low slot fill rate (<80%)" alert. Requires at
+      # least one assigned slot in the window (the _total increase guard) so the
+      # rule produces no series when the node has no proposer duties.
+      - alert: LowSlotFillRate
+        expr: |
+          (
+            sum by (job) (increase(aztec_sequencer_slot_filled_count[1h]))
+            /
+            sum by (job) (increase(aztec_sequencer_slot_total_count[1h]))
+          ) < 0.8
+          and sum by (job) (increase(aztec_sequencer_slot_total_count[1h])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: sequencer
+        annotations:
+          summary: "Low slot fill rate ({{ $labels.job }})"
+          description: "Only {{ $value | humanizePercentage }} of assigned slots filled on {{ $labels.job }} in the last hour."
+          runbook: "Check for missed proposals: peers, attestation-collection time, block-build failures, L1 connectivity"
+
+      # Attestation failures. Mirrors Aztec's own "Validator - attestation failures"
+      # alert. node_issue = this node couldn't attest (offline/slow/resource);
+      # bad_proposal = it rejected an invalid proposal (expected occasionally).
+      - alert: AttestationFailures
+        expr: |
+          sum by (job) (
+            increase(aztec_validator_attestation_failed_node_issue_count[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: validator
+        annotations:
+          summary: "Validator attestation failures ({{ $labels.job }})"
+          description: "{{ $value }} attestation failure(s) due to node issues on {{ $labels.job }} in 15m."
+          runbook: "Check node health, resources, peers, and attestation-collection latency"
+
+      # L1 publish failure modes beyond blob tx failures. Mirrors Aztec's own
+      # "L1 - tx publish failures" alert, which sums reverted + cancelled +
+      # not_mined. Publisher metric, so it has no series on non-publisher nodes.
+      - alert: L1TxPublishFailures
+        expr: |
+          sum by (job) (
+            increase(aztec_l1_tx_reverted_count[15m])
+            + increase(aztec_l1_tx_cancelled_count[15m])
+            + increase(aztec_l1_tx_not_mined_count[15m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: publisher
+        annotations:
+          summary: "L1 tx publish failures ({{ $labels.job }})"
+          description: "{{ $value }} L1 tx failure(s) (reverted/cancelled/not-mined) on {{ $labels.job }} in 15m."
+          runbook: "Check L1 gas pricing, nonce management, publisher balance, and L1 RPC health"
+
   - name: aztec_provider
     # Provider alerts are gated on aztec_provider_active == 1 so they ONLY fire on
     # nodes that are actually staking providers. check-provider-queue.sh sets
