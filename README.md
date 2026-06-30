@@ -121,6 +121,7 @@ Edit `config.env` with your values:
 # Required
 NETWORK="sepolia"                    # or "mainnet"
 GETH_RPC_URL="http://localhost:8545" # local Geth node (used for all RPC queries)
+IS_PROVIDER="true"                   # set "false" on non-provider nodes (silences provider alerts)
 PROVIDER_ID="50"                     # your provider ID
 PUBLISHER_ADDRESS="0xYOUR_PUBLISHER_ADDRESS"
 
@@ -230,7 +231,9 @@ underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gw
 | `aztec_geth_syncing` | `check-geth-health.sh` | Sync status (1=syncing, 0=synced) |
 | `aztec_geth_chain_id` | `check-geth-health.sh` | Network verification |
 | `aztec_publisher_balance_eth` | `check-publisher-balance.sh` | Publisher ETH balance (via Geth) |
+| `aztec_provider_active` | `check-provider-queue.sh` | 1 only when node is a queryable provider (alert gate) |
 | `aztec_provider_queue_length` | `check-provider-queue.sh` | Available keystores in queue |
+| `aztec_provider_last_success_timestamp_seconds` | `check-provider-queue.sh` | Unix time of last successful queue read |
 | `aztec_provider_queue_decrease` | `check-delegations.sh` | New delegation detected |
 
 ### Recording Rules (pre-computed)
@@ -271,8 +274,26 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 
 | Alert | Condition | Action |
 |-------|-----------|--------|
-| `LowKeystoreQueue` | `aztec_provider_queue_length < 5` for 1h | Generate & register new keystores |
-| `NewDelegationDetected` | `aztec_provider_queue_decrease > 0` (info) | Configure coinbase for new sequencer |
+| `LowKeystoreQueue` | `aztec_provider_queue_length < 5` **and** `aztec_provider_active == 1` for 1h | Generate & register new keystores |
+| `NewDelegationDetected` | `aztec_provider_queue_decrease > 0` **and** `aztec_provider_active == 1` (info) | Configure coinbase for new sequencer |
+
+### Avoiding false positives on non-provider nodes
+
+The goal is that an alert only fires when something is genuinely wrong. Two
+mechanisms keep provider alerts quiet on nodes that aren't staking providers:
+
+1. **`IS_PROVIDER` toggle** — set `IS_PROVIDER="false"` in `config.env` on a
+   non-provider node. The provider scripts then `DELETE` their Pushgateway group
+   and exit, so no `aztec_provider_*` series exist at all.
+2. **`aztec_provider_active` gate** — when `IS_PROVIDER="true"`, the queue is only
+   reported after a *successful* on-chain read, alongside `aztec_provider_active=1`.
+   A failed read pushes `active=0` and drops the queue gauge (via Pushgateway
+   `PUT`), so a missing/zero/stale value can never be misread as "queue = 0". Both
+   provider alerts require `aztec_provider_active == 1`.
+
+The sequencer/publisher alerts (balance, blob failures, proposal failures, etc.)
+need no toggle: those OTEL metrics simply don't exist on a node that isn't running
+a sequencer, so the alerts have no series to evaluate and stay silent.
 
 ## Contract Addresses
 
