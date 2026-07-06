@@ -367,6 +367,7 @@ entry that says so:
 | Dashboard uid | `aztec-sequencer` — downstream pins it so re-syncs update the same Grafana dashboard in place |
 | Dashboard variables | Exactly `datasource` (type `datasource`), `job`, `instance`; panel queries filter only on `job`/`instance` plus metric-intrinsic labels (`aztec_status`, `aztec_error_type`). The downstream transform mechanically rewrites `instance` to its `host`/`chain`/`network` label model — new variables or new selector shapes need a matching transform update |
 | Rules stay label-portable | No host-, site-, or deployment-specific selectors; no `on(...)` joins that assume this repo's exact scrape labels. The `GethDown` freshness gate uses a bare `and` (full-label-set match) precisely so it works both here (`honor_labels: true`) and behind an aggregating hub (`honor_labels: false`, labels demoted to `exported_*`) |
+| Push groups stay label-clean | `check-geth-health.sh` keeps pushing its metrics with **no per-metric labels** — an extra label (absent from the group's `push_time_seconds`) would break `GethDown`'s full-label match and silence the alert (fails closed) |
 | Recording-rule names | `aztec:publisher_balance_burn_rate_per_hour`, `aztec:publisher_balance_hours_remaining`, `aztec:l1_gas_price_avg_gwei` — dashboard panels reference them by name |
 | Alert names + severity policy | `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`, all `severity: critical` — downstream Alertmanager routing/inhibition keys off these |
 

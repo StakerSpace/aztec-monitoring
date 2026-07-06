@@ -76,10 +76,19 @@ groups:
       #     exported_instance="local"
       # Either way the other push groups (aztec_publisher, aztec_provider,
       # aztec_delegations) differ in job/exported_job so their freshness can
-      # never satisfy this gate, and with several nodes the differing target
-      # labels keep one node's fresh push from masking another node's stale
-      # data. The previous `and on(job, instance)` form broke both properties
-      # as soon as more than one Pushgateway (or push group) was in play.
+      # never satisfy this gate. The previous `and on(job, instance)` form
+      # broke that behind a hub scrape: every group on a gateway shares the
+      # same scrape-level job/instance there, so ANY fresh group (e.g. the
+      # 30-minute balance check) could vouch for a stale aztec_geth_up.
+      # (Scraping several nodes' gateways directly with honor_labels: true is
+      # broken regardless of this expression — the pushed job="aztec_geth",
+      # instance="local" collide across nodes at ingestion; give each
+      # pushgateway target distinguishing labels, or scrape via a hub.)
+      #
+      # CONSTRAINT: check-geth-health.sh must keep pushing aztec_geth_up with
+      # NO per-metric labels. An extra label on the metric (absent from the
+      # group's push_time_seconds) would make the full-label match fail and
+      # this alert go permanently silent (fails closed, never falsely pages).
       - alert: GethDown
         expr: aztec_geth_up == 0 and (time() - push_time_seconds < 900)
         for: 5m

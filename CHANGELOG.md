@@ -14,14 +14,24 @@ through an aggregating hub (`honor_labels: false`, pushed labels demoted to
 ### Changed
 - **`GethDown` freshness gate is now label-portable** — the expression drops
   `on(job, instance)` in favor of a bare `and` (full-label-set match). The old
-  form had two latent bugs once more than one Pushgateway or push group was in
-  play: behind a hub scrape, every push group on a gateway shares the same
-  scrape-level `job`/`instance`, so *any* fresh group (e.g. the 30-minute
-  balance check) could satisfy the gate for a stale `aztec_geth_up`; and with
-  several nodes pushing the hardcoded `instance="local"`, one node's fresh
-  push could mask another node's stale data. The bare `and` matches the geth
-  group's own `push_time_seconds` exactly, per node and per group, in both
-  scrape modes. Semantics on a single-node direct scrape are unchanged.
+  form had a latent bug behind a hub scrape (`honor_labels: false`): every
+  push group on a gateway shares the same scrape-level `job`/`instance` there,
+  so *any* fresh group (e.g. the 30-minute balance check) could satisfy the
+  gate for a stale `aztec_geth_up`. The bare `and` matches the geth group's
+  own `push_time_seconds` exactly, per node and per group, in both scrape
+  modes. Semantics on a single-node direct scrape are unchanged. (Scraping
+  several nodes' gateways directly with `honor_labels: true` remains broken
+  regardless of the expression — the pushed `job`/`instance="local"` collide
+  across nodes at ingestion; use distinguishing target labels or a hub.)
+  The rule file also pins a new constraint: the geth push group must stay
+  free of per-metric labels, or the full-label match fails closed and the
+  alert goes silent.
+- **Dashboard: "Chain Reorgs (prune count)" red-color override actually
+  applies now** — the `byName` matcher held the literal template string
+  `Prunes {{job}}`, which never matches a *rendered* series name, so the
+  override was inert. Replaced with a `byRegexp` matcher (`/^Prunes /`) that
+  survives whatever the legend template renders to (upstream or in
+  downstream-transformed copies).
 - **Alert summaries include the node when a `host` label is present**
   (`{{ if $labels.host }} on {{ $labels.host }}{{ end }}`). Renders empty on
   this repo's standalone setup (no `host` label); identifies the node when the
