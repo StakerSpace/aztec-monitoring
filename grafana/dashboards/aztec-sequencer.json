@@ -953,8 +953,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Prunes {{job}}"
+              "id": "byRegexp",
+              "options": "/^Prunes /"
             },
             "properties": [
               {
@@ -2276,6 +2276,6 @@
   "timezone": "browser",
   "title": "Aztec Sequencer Dashboard",
   "uid": "aztec-sequencer",
-  "version": 6,
+  "version": 7,
   "weekStart": ""
 }

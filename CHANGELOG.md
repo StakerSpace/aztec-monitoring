@@ -3,6 +3,49 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-07-06 — Portable GethDown gate + downstream-consumers contract
+
+This repo now formally feeds StakerSpace/monitoring-stack-ansible, which
+vendors the dashboard and rules via a mechanical sync. Rules must therefore
+work both scraped directly (`honor_labels: true`, this repo's setup) and
+through an aggregating hub (`honor_labels: false`, pushed labels demoted to
+`exported_*`).
+
+### Changed
+- **`GethDown` freshness gate is now label-portable** — the expression drops
+  `on(job, instance)` in favor of a bare `and` (full-label-set match). The old
+  form had a latent bug behind a hub scrape (`honor_labels: false`): every
+  push group on a gateway shares the same scrape-level `job`/`instance` there,
+  so *any* fresh group (e.g. the 30-minute balance check) could satisfy the
+  gate for a stale `aztec_geth_up`. The bare `and` matches the geth group's
+  own `push_time_seconds` exactly, per node and per group, in both scrape
+  modes. Semantics on a single-node direct scrape are unchanged. (Scraping
+  several nodes' gateways directly with `honor_labels: true` remains broken
+  regardless of the expression — the pushed `job`/`instance="local"` collide
+  across nodes at ingestion; use distinguishing target labels or a hub.)
+  The rule file also pins a new constraint: the geth push group must stay
+  free of per-metric labels, or the full-label match fails closed and the
+  alert goes silent.
+- **Dashboard: "Chain Reorgs (prune count)" red-color override actually
+  applies now** — the `byName` matcher held the literal template string
+  `Prunes {{job}}`, which never matches a *rendered* series name, so the
+  override was inert. Replaced with a `byRegexp` matcher (`/^Prunes /`) that
+  survives whatever the legend template renders to (upstream or in
+  downstream-transformed copies).
+- **Alert summaries include the node when a `host` label is present**
+  (`{{ if $labels.host }} on {{ $labels.host }}{{ end }}`). Renders empty on
+  this repo's standalone setup (no `host` label); identifies the node when the
+  rules run on an aggregating hub that stamps one.
+
+### Added
+- **README "Downstream Consumers" section** — pins the sync contract: stable
+  file paths, dashboard uid `aztec-sequencer`, the `datasource`/`job`/`instance`
+  variable interface, label-portable rules, stable recording-rule and alert
+  names. Changes to contract files get an explicit CHANGELOG entry going
+  forward.
+
+---
+
 ## 2026-06-30 — Critical-only alerting (node-operator policy)
 
 Pared the alert set down to **page-worthy criticals only**. The dashboard is
