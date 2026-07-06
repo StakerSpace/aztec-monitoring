@@ -349,6 +349,30 @@ Hardening against false pages:
 4. **Balance Buffers** - Maintain 1+ ETH in publisher
 5. **Regular Testing** - Verify alert routing monthly
 
+## Downstream Consumers
+
+This repo is the **source of truth** for the Aztec dashboard and Prometheus
+rules. [StakerSpace/monitoring-stack-ansible](https://github.com/StakerSpace/monitoring-stack-ansible)
+vendors adapted copies via its `scripts/sync-aztec-monitoring.sh`
+(`make sync-aztec` there) — **don't hand-edit the vendored copies; change the
+files here, then re-run the sync downstream.**
+
+The sync consumes three files as a stable interface. Changing any of the
+following is a **breaking change for consumers** and must get a CHANGELOG
+entry that says so:
+
+| Contract item | What must stay stable |
+|---|---|
+| File paths | `grafana/dashboards/aztec-sequencer.json`, `prometheus/alerts/aztec-alerts.yml`, `prometheus/recording-rules.yml` |
+| Dashboard uid | `aztec-sequencer` — downstream pins it so re-syncs update the same Grafana dashboard in place |
+| Dashboard variables | Exactly `datasource` (type `datasource`), `job`, `instance`; panel queries filter only on `job`/`instance` plus metric-intrinsic labels (`aztec_status`, `aztec_error_type`). The downstream transform mechanically rewrites `instance` to its `host`/`chain`/`network` label model — new variables or new selector shapes need a matching transform update |
+| Rules stay label-portable | No host-, site-, or deployment-specific selectors; no `on(...)` joins that assume this repo's exact scrape labels. The `GethDown` freshness gate uses a bare `and` (full-label-set match) precisely so it works both here (`honor_labels: true`) and behind an aggregating hub (`honor_labels: false`, labels demoted to `exported_*`) |
+| Recording-rule names | `aztec:publisher_balance_burn_rate_per_hour`, `aztec:publisher_balance_hours_remaining`, `aztec:l1_gas_price_avg_gwei` — dashboard panels reference them by name |
+| Alert names + severity policy | `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`, all `severity: critical` — downstream Alertmanager routing/inhibition keys off these |
+
+Every change to a contract file gets a `CHANGELOG.md` entry; the downstream
+action on each entry is to re-run the sync and review the diff.
+
 ## Links
 
 - [Aztec Monitoring & Observability](https://docs.aztec.network/operate/operators/monitoring)

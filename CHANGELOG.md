@@ -3,6 +3,39 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-07-06 — Portable GethDown gate + downstream-consumers contract
+
+This repo now formally feeds StakerSpace/monitoring-stack-ansible, which
+vendors the dashboard and rules via a mechanical sync. Rules must therefore
+work both scraped directly (`honor_labels: true`, this repo's setup) and
+through an aggregating hub (`honor_labels: false`, pushed labels demoted to
+`exported_*`).
+
+### Changed
+- **`GethDown` freshness gate is now label-portable** — the expression drops
+  `on(job, instance)` in favor of a bare `and` (full-label-set match). The old
+  form had two latent bugs once more than one Pushgateway or push group was in
+  play: behind a hub scrape, every push group on a gateway shares the same
+  scrape-level `job`/`instance`, so *any* fresh group (e.g. the 30-minute
+  balance check) could satisfy the gate for a stale `aztec_geth_up`; and with
+  several nodes pushing the hardcoded `instance="local"`, one node's fresh
+  push could mask another node's stale data. The bare `and` matches the geth
+  group's own `push_time_seconds` exactly, per node and per group, in both
+  scrape modes. Semantics on a single-node direct scrape are unchanged.
+- **Alert summaries include the node when a `host` label is present**
+  (`{{ if $labels.host }} on {{ $labels.host }}{{ end }}`). Renders empty on
+  this repo's standalone setup (no `host` label); identifies the node when the
+  rules run on an aggregating hub that stamps one.
+
+### Added
+- **README "Downstream Consumers" section** — pins the sync contract: stable
+  file paths, dashboard uid `aztec-sequencer`, the `datasource`/`job`/`instance`
+  variable interface, label-portable rules, stable recording-rule and alert
+  names. Changes to contract files get an explicit CHANGELOG entry going
+  forward.
+
+---
+
 ## 2026-06-30 — Critical-only alerting (node-operator policy)
 
 Pared the alert set down to **page-worthy criticals only**. The dashboard is

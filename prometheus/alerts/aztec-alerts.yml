@@ -31,7 +31,7 @@ groups:
           severity: critical
           component: publisher
         annotations:
-          summary: "Publisher ETH critically low ({{ $labels.job }})"
+          summary: "Publisher ETH critically low ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
           description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Refill immediately."
           runbook: "Top up publisher address with at least 1 ETH"
 
@@ -44,7 +44,7 @@ groups:
           severity: critical
           component: archiver
         annotations:
-          summary: "No L2 blocks in 15m ({{ $labels.job }})"
+          summary: "No L2 blocks in 15m ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
           description: "{{ $labels.job }} has not advanced the proposed tip in 15m. May be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC, consider restart"
 
@@ -56,20 +56,37 @@ groups:
           severity: critical
           component: world_state
         annotations:
-          summary: "World state critical error ({{ $labels.job }})"
+          summary: "World state critical error ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
           description: "{{ $value }} critical world-state error(s) on {{ $labels.job }} in 15m."
           runbook: "Check node logs for world-state errors; may need resync from snapshot"
 
       # Geth (local L1 execution client) down - the sequencer can't do L1 ops.
       # Gated on push_time_seconds freshness so a dead check-geth-health.sh cron
       # (rather than an actually-down geth) can NEVER raise a page on stale data.
+      #
+      # The bare `and` (no on() clause) matches on the FULL label set. That is
+      # deliberate: aztec_geth_up and its group's push_time_seconds come from
+      # the same Pushgateway group, so their labels are identical however the
+      # gateway is scraped:
+      #   - directly with honor_labels: true (this repo's prometheus.yml):
+      #     both sides carry job="aztec_geth", instance="local"
+      #   - through an aggregating hub with honor_labels: false (e.g.
+      #     StakerSpace/monitoring-stack-ansible): both sides carry the target
+      #     labels (job/instance/host/...) plus exported_job="aztec_geth",
+      #     exported_instance="local"
+      # Either way the other push groups (aztec_publisher, aztec_provider,
+      # aztec_delegations) differ in job/exported_job so their freshness can
+      # never satisfy this gate, and with several nodes the differing target
+      # labels keep one node's fresh push from masking another node's stale
+      # data. The previous `and on(job, instance)` form broke both properties
+      # as soon as more than one Pushgateway (or push group) was in play.
       - alert: GethDown
-        expr: aztec_geth_up == 0 and on(job, instance) (time() - push_time_seconds < 900)
+        expr: aztec_geth_up == 0 and (time() - push_time_seconds < 900)
         for: 5m
         labels:
           severity: critical
           component: geth
         annotations:
-          summary: "Geth is down"
+          summary: "Geth is down{{ if $labels.host }} on {{ $labels.host }}{{ end }}"
           description: "The geth health check reports the node as down (fresh data)."
           runbook: "Check geth process, RPC, and logs"
