@@ -4,8 +4,9 @@
 # policy — everything softer is watched on the Grafana dashboard, not paged).
 # So routing is simple: every alert is severity=critical and goes to PagerDuty.
 #
-# The four critical (page-worthy) alerts are:
-#   LowL1PublisherBalance, L2BlockHeightNotIncreasing, WorldStateCriticalError, GethDown
+# The five critical (page-worthy) alerts are:
+#   AztecNodeDown, LowL1PublisherBalance, L2BlockHeightNotIncreasing,
+#   WorldStateCriticalError, GethDown
 #
 # Usage: copy to alertmanager.yml, fill in the secrets, validate, and reload:
 #   amtool check-config alertmanager.yml
@@ -36,4 +37,11 @@ inhibit_rules:
   # them so a node with a dead geth pages once, not several times.
   - source_matchers: [ 'alertname = "GethDown"' ]
     target_matchers: [ 'severity = "critical"', 'component =~ "archiver|publisher" ' ]
+    equal: ['job', 'instance']
+
+  # A dead node (scrape target down) briefly overlaps with the OTEL-based
+  # alerts before their series go stale and resolve; page once for the node,
+  # not once per symptom.
+  - source_matchers: [ 'alertname = "AztecNodeDown"' ]
+    target_matchers: [ 'severity = "critical"', 'component =~ "archiver|publisher|world_state" ' ]
     equal: ['job', 'instance']

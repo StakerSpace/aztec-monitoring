@@ -1,12 +1,20 @@
 # Prometheus Configuration for Aztec Sequencer Monitoring
 #
-# Multi-node setup:
-#   - aztec-mainnet-active: Primary mainnet sequencer
-#   - aztec-mainnet-redundant: Backup mainnet sequencer
-#   - aztec-testnet: Testnet sequencer
+# Aztec node scraping follows the convention of the official monitoring
+# installer (https://docs.aztec.network/operate/operators/concepts/monitoring):
+#   - ONE job named "aztec-node" for all Aztec nodes
+#   - one static_configs block per node, each with a PINNED `instance` label
 #
-# Each Aztec node exposes metrics via its own OTEL Collector on port 8889.
-# Adjust hostnames/IPs below to match your deployment.
+# Why pin `instance`? The node generates a random service.instance.id at every
+# boot; if the dashboard series were named by it, every restart would start new
+# series (discontinuity). A target-level `instance` label (with the default
+# honor_labels: false) overrides that permanently — the node's generated id is
+# preserved as `exported_instance`. Pick a distinct, durable value per node and
+# never change it.
+#
+# Nodes are distinguished by `instance` (and optional `network`/`role` labels);
+# nodes deployed with StakerSpace/aztec-sequencer-ansible expose the collector
+# on <node-ip>:8889 out of the box.
 #
 # Scrape targets:
 #   1. OTEL Collectors (port 8889) - Aztec node metrics exported via OpenTelemetry
@@ -21,8 +29,6 @@
 #
 #   4. Pushgateway (port 9091) - Custom metrics pushed by cron scripts
 #      Exposes: aztec_geth_up, aztec_geth_block_number, aztec_publisher_balance_eth, etc.
-#
-#   5. OTEL Collector self-metrics (port 8888) - Health of the collector itself
 
 global:
   scrape_interval: 15s
@@ -33,38 +39,35 @@ rule_files:
   - "alerts/*.yml"
 
 scrape_configs:
-  # ── Aztec Node Metrics (via OTEL Collectors) ─────────────────────────
-  # Each Aztec node has its own OTEL collector exporting Prometheus metrics.
-  # The 'network' and 'role' labels help distinguish nodes in dashboards.
-  #
-  # Mainnet - Active sequencer
-  - job_name: "aztec-mainnet-active"
+  # ── Aztec Nodes (via each node's OTEL Collector) ─────────────────────
+  # One job for all nodes; one block per node with a pinned instance label.
+  # Adjust targets to your deployment (container name, host IP, or node IP).
+  - job_name: "aztec-node"
     scrape_interval: 15s
+    metrics_path: /metrics
     static_configs:
+      # Mainnet - Active sequencer
       - targets: ["otel-collector:8889"]
         labels:
+          instance: "sequencer-mainnet-1"   # stable name — keep it forever
           network: "mainnet"
           role: "active"
 
-  # Mainnet - Redundant sequencer (standby)
-  # Uncomment and set the correct target when the redundant node is deployed.
-  # - job_name: "aztec-mainnet-redundant"
-  #   scrape_interval: 15s
-  #   static_configs:
-  #     - targets: ["otel-collector-redundant:8889"]
-  #       labels:
-  #         network: "mainnet"
-  #         role: "redundant"
+      # Mainnet - Redundant sequencer (standby)
+      # Uncomment and set the correct target when the redundant node is deployed.
+      # - targets: ["<redundant-node-ip>:8889"]
+      #   labels:
+      #     instance: "sequencer-mainnet-2"
+      #     network: "mainnet"
+      #     role: "redundant"
 
-  # Testnet sequencer
-  # Uncomment and set the correct target when the testnet node is deployed.
-  # - job_name: "aztec-testnet"
-  #   scrape_interval: 15s
-  #   static_configs:
-  #     - targets: ["otel-collector-testnet:8889"]
-  #       labels:
-  #         network: "testnet"
-  #         role: "active"
+      # Testnet sequencer
+      # Uncomment and set the correct target when the testnet node is deployed.
+      # - targets: ["<testnet-node-ip>:8889"]
+      #   labels:
+      #     instance: "sequencer-testnet-1"
+      #     network: "testnet"
+      #     role: "active"
 
   # ── Geth (Execution Layer) ───────────────────────────────────────────
   - job_name: "geth"
@@ -90,10 +93,15 @@ scrape_configs:
     static_configs:
       - targets: ["pushgateway:9091"]
 
-  # ── OTEL Collector Self-Metrics ──────────────────────────────────────
-  - job_name: "otel-collector"
-    scrape_interval: 30s
-    static_configs:
-      - targets: ["otel-collector:8888"]
-        labels:
-          instance: "otel-collector"
+  # ── OTEL Collector Self-Metrics (optional) ───────────────────────────
+  # The collector's own health metrics live on port 8888 INSIDE the collector
+  # container and are not exposed by the default node deployment (neither the
+  # official installer nor aztec-sequencer-ansible publishes 8888). Enable
+  # only if you expose it yourself; primary collector-down signal is
+  # up{job="aztec-node"} == 0 either way.
+  # - job_name: "otel-collector"
+  #   scrape_interval: 30s
+  #   static_configs:
+  #     - targets: ["<node-ip>:8888"]
+  #       labels:
+  #         instance: "otel-collector-mainnet-1"

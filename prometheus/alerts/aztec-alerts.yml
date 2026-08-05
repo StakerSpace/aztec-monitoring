@@ -6,13 +6,21 @@
 # provider keystore queue, etc.) has been removed — watch those on the Grafana
 # dashboard instead. Each alert below is severity: critical and should page.
 #
-# Metric names cross-checked against the ACTUAL aztec-packages source AND
-# Aztec's own production monitoring on master (latest release line
-# v4.1.2 / v4.2.0-nightly):
-#   aztec_l1_publisher_balance_eth          (gauge, 'eth' suffix)
+# Metric names cross-checked against the ACTUAL aztec-packages source, Aztec's
+# own production monitoring, AND the official V5 monitoring installer
+# (docs.aztec.network/scripts/aztec-monitoring.sh, verified against live
+# v5.0.0 nodes). Works on both the v4 line and V5:
+#   aztec_l1_balance_eth                    (V5 gauge — exists from node startup)
+#   aztec_l1_publisher_balance_eth          (gauge, 'eth' suffix — v4 fallback,
+#                                            only emitted once proposing starts)
 #   aztec_archiver_block_height             (gauge, split by aztec_status)
 #   aztec_world_state_critical_error_count  (counter)
 #   aztec_geth_up                           (pushgateway gauge from check-geth-health.sh)
+#
+# Node scrape-job convention: the Aztec node targets are scraped under ONE job
+# named "aztec-node" (the official installer's convention; see prometheus.yml),
+# with a pinned per-target `instance` label naming each node. AztecNodeDown
+# keys off that job name — rename it if your scrape config differs.
 #
 # IMPORTANT: aztec_archiver_block_height is split by the aztec_status attribute
 # (values: proposed / proven / finalized). There is NO empty-string series, so a
@@ -23,16 +31,37 @@
 groups:
   - name: aztec_critical
     rules:
-      # Publisher running out of ETH - can't submit blocks without it
+      # Node metrics endpoint unreachable - node process, collector, or machine
+      # is down. Without this, a dead node makes every OTEL-based alert below
+      # go STALE (their series vanish) and nothing would ever page.
+      # `up` is scrape-target health, so this cannot fire on phantom data.
+      # (The official installer pages after 2m; we allow 5m to ride out
+      # transient network blips between monitoring machine and node.)
+      - alert: AztecNodeDown
+        expr: up{job="aztec-node"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: node
+        annotations:
+          summary: "Aztec node down ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "Prometheus cannot scrape {{ $labels.instance }}'s metrics endpoint. The node or its OTEL collector is down, or port 8889 is unreachable."
+          runbook: "Check the node machine, `docker compose ps`, and firewall/connectivity to :8889"
+
+      # Publisher running out of ETH - can't submit blocks without it.
+      # aztec_l1_balance_eth (V5) exists from node startup, so an underfunded
+      # account pages immediately; aztec_l1_publisher_balance_eth is the v4
+      # fallback (only emitted once the node starts proposing). On nodes that
+      # emit both, Alertmanager's group_by alertname collapses them to one page.
       - alert: LowL1PublisherBalance
-        expr: aztec_l1_publisher_balance_eth < 0.2
+        expr: (aztec_l1_balance_eth or aztec_l1_publisher_balance_eth) < 0.2
         for: 5m
         labels:
           severity: critical
           component: publisher
         annotations:
-          summary: "Publisher ETH critically low ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
-          description: "Balance is {{ $value }} ETH on {{ $labels.job }}. Refill immediately."
+          summary: "Publisher ETH critically low ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "Balance is {{ $value }} ETH on {{ $labels.instance }}. Refill immediately."
           runbook: "Top up publisher address with at least 1 ETH"
 
       # Node stuck - not processing blocks.
@@ -44,8 +73,8 @@ groups:
           severity: critical
           component: archiver
         annotations:
-          summary: "No L2 blocks in 15m ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
-          description: "{{ $labels.job }} has not advanced the proposed tip in 15m. May be stuck or out of sync."
+          summary: "No L2 blocks in 15m ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "{{ $labels.instance }} has not advanced the proposed tip in 15m. May be stuck or out of sync."
           runbook: "Check archiver logs, verify L1 RPC, consider restart"
 
       # World state corruption / fatal DB error - node cannot build or sync safely.
@@ -56,8 +85,8 @@ groups:
           severity: critical
           component: world_state
         annotations:
-          summary: "World state critical error ({{ $labels.job }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
-          description: "{{ $value }} critical world-state error(s) on {{ $labels.job }} in 15m."
+          summary: "World state critical error ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "{{ $value }} critical world-state error(s) on {{ $labels.instance }} in 15m."
           runbook: "Check node logs for world-state errors; may need resync from snapshot"
 
       # Geth (local L1 execution client) down - the sequencer can't do L1 ops.

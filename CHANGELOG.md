@@ -3,6 +3,53 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-08-05 — Align with the official V5 monitoring installer
+
+Aztec's docs now ship a maintained monitoring installer
+(`docs.aztec.network/scripts/aztec-monitoring.sh`, see
+[Monitoring and metrics](https://docs.aztec.network/operate/operators/concepts/monitoring)).
+This release aligns our scrape conventions and closes an alerting gap it
+exposed. **Contract files changed — downstream consumers re-run the sync and
+review; see notes per item.**
+
+### Added
+- **`AztecNodeDown` alert (contract change: new alert name, `severity:
+  critical`, `component: node`)** — pages when `up{job="aztec-node"} == 0`
+  for 5m. Closes a real gap: all other OTEL-based alerts go *stale* when the
+  node dies (their series vanish), so a dead node previously stopped all
+  alerting instead of paging. `up` is scrape-target health, so it cannot
+  fire on phantom data. **Downstream action:** add the alert name to
+  routing; the selector assumes the aztec scrape job is named `aztec-node`
+  (the official installer's convention) — rewrite it in the sync transform
+  if your job naming differs. This is the one documented exception to the
+  "no deployment-specific selectors" rule.
+- `alertmanager.example.yml`: inhibition rule so a firing `AztecNodeDown`
+  suppresses the dependent OTEL criticals on the same node during the brief
+  overlap before they go stale.
+
+### Changed
+- **`LowL1PublisherBalance` expr (contract file, name/severity unchanged)** —
+  now `(aztec_l1_balance_eth or aztec_l1_publisher_balance_eth) < 0.2`.
+  `aztec_l1_balance_eth` (V5) exists from node startup, so an underfunded
+  account pages immediately; the old publisher-scope metric is only emitted
+  once proposing starts (a fresh node with an empty publisher account never
+  paged). The old name stays as the fallback for v4-line nodes.
+- **`prometheus.yml`: single `aztec-node` job for all Aztec nodes** (was one
+  job per node: `aztec-mainnet-active`, …), one `static_configs` block per
+  node with a **pinned `instance` label** — the official installer's
+  convention, and the docs-recommended fix for series discontinuity from the
+  boot-random `service.instance.id`. Not a contract file; the dashboard's
+  `job`/`instance` variables work unchanged (all panels filter
+  `job=~"$job"`). Existing setups keeping the old per-node job names remain
+  fully compatible with everything except `AztecNodeDown` (above).
+- `prometheus.yml`: the OTEL-collector self-metrics job (`:8888`) is now
+  commented out — neither the official installer nor
+  aztec-sequencer-ansible exposes that port, so the target was down/noise
+  by default. Re-enable if you expose it yourself.
+- OTEL alert annotations name the node by `{{ $labels.instance }}` (the
+  pinned label) instead of `{{ $labels.job }}`, which is now the same
+  (`aztec-node`) for every node.
+
 ## 2026-07-06 — Portable GethDown gate + downstream-consumers contract
 
 This repo now formally feeds StakerSpace/monitoring-stack-ansible, which
