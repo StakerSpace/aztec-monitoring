@@ -83,15 +83,24 @@ cp prometheus/alerts/aztec-alerts.yml /etc/prometheus/rules/
 cp prometheus/recording-rules.yml /etc/prometheus/rules/
 ```
 
-Then **merge** the scrape targets from `prometheus/prometheus.yml` into your existing Prometheus config. It defines five active scrape jobs (plus commented-out templates for redundant/testnet Aztec nodes):
+Then **merge** the scrape targets from `prometheus/prometheus.yml` into your existing Prometheus config. It defines four active scrape jobs (plus commented-out templates for redundant/testnet Aztec nodes and OTEL collector self-metrics):
 
 | Job | Target | What it scrapes |
 |-----|--------|-----------------|
-| `aztec-mainnet-active` | `otel-collector:8889` | Aztec node metrics via OTEL |
+| `aztec-node` | `otel-collector:8889` (one block per node) | Aztec node metrics via OTEL |
 | `geth` | `geth:6060` | Geth execution layer metrics |
 | `lighthouse` | `lighthouse:5054` | Lighthouse consensus layer metrics |
 | `pushgateway` | `pushgateway:9091` | Custom metrics from cron scripts |
-| `otel-collector` | `otel-collector:8888` | OTEL Collector self-health |
+
+All Aztec nodes share the single `aztec-node` job — the convention used by the
+[official monitoring installer](https://docs.aztec.network/operate/operators/concepts/monitoring#set-up-monitoring-with-the-installer) —
+with one `static_configs` block per node that **pins a stable `instance`
+label** (e.g. `sequencer-mainnet-1`). Pinning matters: the node regenerates
+`service.instance.id` on every restart, so an unpinned instance label
+fragments every dashboard series on each restart. Pick a durable name per
+node and never change it. Nodes deployed with
+[StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible)
+expose the collector on `<node-ip>:8889` out of the box.
 
 > **Note:** Adjust target hostnames/IPs to match your setup. If services run on the host (not Docker), use `localhost` or the host IP instead of container names.
 
@@ -229,14 +238,17 @@ master (latest release line v4.1.2 / v4.2.0-nightly). OTEL dots become
 underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gwei`).
 
 The **Suggested threshold** column is a reference for dashboard-watching — it is
-**not** the implemented alert set. Only four metrics are wired as paging alerts
-(`aztec_l1_publisher_balance_eth` < 0.2, `aztec_archiver_block_height` tip not
-advancing 15m, `aztec_world_state_critical_error_count` any in 15m, and
+**not** the implemented alert set. Only five conditions are wired as paging alerts
+(`up{job="aztec-node"}` == 0, publisher balance < 0.2 ETH via
+`aztec_l1_balance_eth`/`aztec_l1_publisher_balance_eth`,
+`aztec_archiver_block_height` tip not advancing 15m,
+`aztec_world_state_critical_error_count` any in 15m, and
 `aztec_geth_up` == 0); see [Key Alerts](#key-alerts). Watch the rest on Grafana.
 
 | Metric | Description | Suggested threshold |
 |--------|-------------|---------------------|
-| `aztec_l1_publisher_balance_eth` | Publisher ETH balance (gauge) | < 0.2 ETH critical, < 1.0 ETH warning |
+| `aztec_l1_balance_eth` | L1 account ETH balance (V5 — present from node startup) | < 0.2 ETH critical |
+| `aztec_l1_publisher_balance_eth` | Publisher ETH balance (gauge; only emitted once proposing starts) | < 0.2 ETH critical, < 1.0 ETH warning |
 | `aztec_archiver_block_height` | L2 block height, split by `aztec_status` (`proposed`/`proven`/`finalized`) | tip not advancing 15m |
 | `aztec_archiver_l1_block_height` | L1 block height the archiver has seen | No increase in 15m |
 | `aztec_l1_publisher_blob_tx_success` | Successful blob submissions (UpDownCounter → gauge) | - |
@@ -298,13 +310,14 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 
 | Alert | Condition | Action |
 |-------|-----------|--------|
-| `LowL1PublisherBalance` | Balance < 0.2 ETH for 5m | Top up publisher address with ETH |
+| `AztecNodeDown` | `up{job="aztec-node"} == 0` for 5m | Check node machine, compose stack, connectivity to :8889 |
+| `LowL1PublisherBalance` | Balance < 0.2 ETH for 5m (`aztec_l1_balance_eth`, falls back to `aztec_l1_publisher_balance_eth` on v4) | Top up publisher address with ETH |
 | `L2BlockHeightNotIncreasing` | Proposed tip not advancing in 15m (for 5m) | Check archiver logs, L1 RPC, consider restart |
 | `WorldStateCriticalError` | Any world-state critical error in 15m (for 1m) | Check logs; may need resync from snapshot |
 | `GethDown` | `aztec_geth_up == 0` for 5m | Check geth process, RPC, and logs |
 
 > **Critical-only by design.** As node operators we page **only** on conditions
-> that warrant waking someone up, so the alert set is deliberately just the four
+> that warrant waking someone up, so the alert set is deliberately just the five
 > above. Everything softer — balance getting low, burn rate, blob/proposal/
 > attestation failures, slot fill rate, chain reorgs, geth peers/sync/stall,
 > mempool, the provider keystore queue, new delegations — is **watched on the
@@ -314,21 +327,25 @@ These mirror `prometheus/alerts/aztec-alerts.yml` exactly.
 
 ### Paging policy — every alert pages
 
-All four alerts are `severity: critical` and warrant a page:
+All five alerts are `severity: critical` and warrant a page:
 
+- `AztecNodeDown` — metrics endpoint unreachable (node, collector, or machine down)
 - `LowL1PublisherBalance` — out of ETH, will stop publishing
 - `L2BlockHeightNotIncreasing` — node not following the chain
 - `WorldStateCriticalError` — state/DB corruption
 - `GethDown` — local L1 client down
 
 `prometheus/alertmanager.example.yml` is a ready-to-fill routing config that sends
-every alert to PagerDuty, with an inhibition rule so a firing `GethDown` suppresses
-the L1-related criticals on the same node (one page, not a storm).
+every alert to PagerDuty, with inhibition rules so a firing `GethDown` or
+`AztecNodeDown` suppresses the dependent criticals on the same node (one page,
+not a storm).
 
 Hardening against false pages:
 
 - The critical OTEL alerts go stale (stop evaluating) if the node dies, so they
-  can't fire on phantom data.
+  can't fire on phantom data — and `AztecNodeDown` (scrape-target health, not
+  OTEL data) is what pages in exactly that case. Before it existed, a dead node
+  silently stopped all alerting.
 - `GethDown` is gated on Pushgateway's `push_time_seconds`, so a **dead
   `check-geth-health.sh` cron can never page** "geth down" on a stale value — only
   fresh evidence (data pushed within 15m) can trigger it.
@@ -366,19 +383,21 @@ entry that says so:
 | File paths | `grafana/dashboards/aztec-sequencer.json`, `prometheus/alerts/aztec-alerts.yml`, `prometheus/recording-rules.yml` |
 | Dashboard uid | `aztec-sequencer` — downstream pins it so re-syncs update the same Grafana dashboard in place |
 | Dashboard variables | Exactly `datasource` (type `datasource`), `job`, `instance`; panel queries filter only on `job`/`instance` plus metric-intrinsic labels (`aztec_status`, `aztec_error_type`). The downstream transform mechanically rewrites `instance` to its `host`/`chain`/`network` label model — new variables or new selector shapes need a matching transform update |
-| Rules stay label-portable | No host-, site-, or deployment-specific selectors; no `on(...)` joins that assume this repo's exact scrape labels. The `GethDown` freshness gate uses a bare `and` (full-label-set match) precisely so it works both here (`honor_labels: true`) and behind an aggregating hub (`honor_labels: false`, labels demoted to `exported_*`) |
+| Rules stay label-portable | No host-, site-, or deployment-specific selectors; no `on(...)` joins that assume this repo's exact scrape labels. The `GethDown` freshness gate uses a bare `and` (full-label-set match) precisely so it works both here (`honor_labels: true`) and behind an aggregating hub (`honor_labels: false`, labels demoted to `exported_*`). **One documented exception:** `AztecNodeDown` selects `up{job="aztec-node"}` — the official installer's job-name convention. Consumers whose Aztec scrape job is named differently must rewrite that selector in their sync transform |
 | Push groups stay label-clean | `check-geth-health.sh` keeps pushing its metrics with **no per-metric labels** — an extra label (absent from the group's `push_time_seconds`) would break `GethDown`'s full-label match and silence the alert (fails closed) |
 | Recording-rule names | `aztec:publisher_balance_burn_rate_per_hour`, `aztec:publisher_balance_hours_remaining`, `aztec:l1_gas_price_avg_gwei` — dashboard panels reference them by name |
-| Alert names + severity policy | `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`, all `severity: critical` — downstream Alertmanager routing/inhibition keys off these |
+| Alert names + severity policy | `AztecNodeDown`, `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`, all `severity: critical` — downstream Alertmanager routing/inhibition keys off these |
 
 Every change to a contract file gets a `CHANGELOG.md` entry; the downstream
 action on each entry is to re-run the sync and review the diff.
 
 ## Links
 
+- [Monitoring and metrics (concepts + official installer)](https://docs.aztec.network/operate/operators/concepts/monitoring)
 - [Aztec Monitoring & Observability](https://docs.aztec.network/operate/operators/monitoring)
 - [Key Metrics Reference](https://docs.aztec.network/operate/operators/monitoring/metrics-reference)
-- [Running a Sequencer](https://docs.aztec.network/the_aztec_network/guides/run_nodes/how_to_run_sequencer)
+- [Run a Node](https://docs.aztec.network/operate/operators)
+- [StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible) — deploys nodes whose metrics endpoint this stack scrapes out of the box
 
 ---
 
