@@ -9,8 +9,8 @@
 # Usage:
 #   ./check-geth-health.sh
 #
-# Cron (every 5 minutes):
-#   */5 * * * * /path/to/check-geth-health.sh >> /var/log/aztec-monitor.log 2>&1
+# Cron (every minute):
+#   * * * * * /path/to/check-geth-health.sh >> /path/to/aztec-monitoring/scripts/logs/aztec-monitor.log 2>&1
 
 set -e
 
