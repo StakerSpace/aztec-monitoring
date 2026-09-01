@@ -3,6 +3,55 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-09-01 — CI gate, rule unit tests, script hardening
+
+No contract-file changes (dashboard, alert rules and recording rules are
+byte-identical). `check-geth-health.sh` changed but keeps its label-free push
+group; downstream consumers have nothing to re-sync.
+
+### Added
+- **CI (`.github/workflows/ci.yml`) and a matching `Makefile`** — `make ci`
+  runs yamllint, shellcheck, `promtool check rules/config`,
+  `amtool check-config`, the new rule unit tests, the new script smoke tests
+  and the contract check. A `changelog-gate` job fails any PR that edits a
+  contract file without a `CHANGELOG.md` entry. `make tools` fetches pinned
+  promtool/amtool binaries.
+- **`prometheus/tests/aztec-alerts.test.yml`** — promtool unit tests for all
+  five alerts and the three recording rules. They pin the historical gotchas:
+  `aztec_status="proposed"` is the tip selector, `LowL1PublisherBalance` fires
+  on the V5 gauge and falls back to the v4 one, `GethDown` fires on fresh
+  Pushgateway data only (a stale/dead cron and another group's freshness never
+  page), `AztecNodeDown` keys off `up`.
+- **`tests/check-contract.py`** — mechanical check of the README "Downstream
+  Consumers" table: dashboard uid/schemaVersion, exactly
+  `datasource`/`job`/`instance` variables, description + unit on every panel,
+  no non-portable label selectors in panel queries, the alert set and
+  critical-only severity, recording-rule names, alertmanager example and the
+  README Key Alerts table all in sync.
+- **`tests/scripts-smoke.sh` + `tests/mock-server.py`** — runs the cron
+  scripts against a stdlib mock of geth JSON-RPC, Pushgateway and a webhook,
+  asserting PUT semantics, decoded values, the label-free geth group and
+  alert fan-out. No network needed.
+- `scripts/lib/common.sh` — shared `send_alert` (Slack/Discord/Telegram),
+  `push_metrics` (PUT), `delete_metrics`, `hex_to_dec`, `log`.
+- `.yamllint`, `.pre-commit-config.yaml`, Dependabot for GitHub Actions.
+
+### Fixed
+- **`check-publisher-balance.sh` under-reported balances above ~9.22 ETH.**
+  Hex wei was converted with bash `printf %d`, which clamps at 2^63-1; a
+  10 ETH balance pushed as 9.223372 ETH. Conversion now goes through `bc`.
+- **Telegram messages were sent with literal `\n`** (the `\n` in the shell
+  strings was only a newline for the JSON channels). Messages are now built
+  with real newlines, JSON-escaped for Slack/Discord and URL-encoded for
+  Telegram. Webhook bodies are also properly JSON-escaped (quotes/backslashes).
+- `check-geth-health.sh` now pushes with `PUT` like the other scripts, so the
+  group only ever contains the current run's metrics.
+- `setup-pushgateway.sh`: `trap` cleanup quoted correctly (ShellCheck SC2064).
+- JSON-RPC `result` parsing tolerates whitespace after the colon (pretty-printing
+  RPC providers).
+- Notification and Pushgateway calls carry a timeout and log failures instead
+  of silently returning success.
+
 ## 2026-08-05 — Align with the official V5 monitoring installer
 
 Aztec's docs now ship a maintained monitoring installer

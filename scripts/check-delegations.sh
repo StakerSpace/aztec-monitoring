@@ -17,28 +17,30 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=config.env.example
 source "${SCRIPT_DIR}/config.env" 2>/dev/null || {
     echo "ERROR: config.env not found. Copy config.env.example to config.env and configure."
     exit 1
 }
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
 STATE_FILE="${SCRIPT_DIR}/.delegation-state"
-TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
 # Provider monitoring toggle (see check-provider-queue.sh).
 IS_PROVIDER="${IS_PROVIDER:-true}"
 DELEGATIONS_GROUP_URL="${PUSHGATEWAY_URL}/metrics/job/aztec_delegations/instance/${PROVIDER_ID}"
 
 if [ "$(echo "$IS_PROVIDER" | tr '[:upper:]' '[:lower:]')" != "true" ]; then
-    echo "[$TIMESTAMP] IS_PROVIDER != true - delegation monitoring disabled."
+    log "IS_PROVIDER != true - delegation monitoring disabled."
     if [ -n "$PUSHGATEWAY_URL" ]; then
-        curl --silent -X DELETE "$DELEGATIONS_GROUP_URL" >/dev/null 2>&1 || true
-        echo "[$TIMESTAMP] Cleared any stale delegation metrics from Pushgateway."
+        delete_metrics "$DELEGATIONS_GROUP_URL"
+        log "Cleared any stale delegation metrics from Pushgateway."
     fi
     exit 0
 fi
 
-echo "[$TIMESTAMP] Checking for new delegations..."
+log "Checking for new delegations..."
 
 # Get current queue length (we track queue changes as a proxy for new delegations).
 # Track success so a failed lookup is never read as a queue change.
@@ -53,7 +55,7 @@ QUEUE_LENGTH_RAW=$(cast call "$STAKING_REGISTRY" \
 if [ "$QUERY_OK" = "1" ]; then
     QUEUE_LENGTH=$(echo "$QUEUE_LENGTH_RAW" | awk '{print $1}')
     if printf '%s' "$QUEUE_LENGTH" | grep -qi '^0x'; then
-        QUEUE_LENGTH=$(cast to-dec "$QUEUE_LENGTH" 2>/dev/null || echo "")
+        QUEUE_LENGTH=$(hex_to_dec "$QUEUE_LENGTH" 2>/dev/null || echo "")
     fi
     case "$QUEUE_LENGTH" in
         ''|*[!0-9]*) QUERY_OK=0; QUEUE_LENGTH=0 ;;
@@ -61,7 +63,7 @@ if [ "$QUERY_OK" = "1" ]; then
 fi
 
 if [ "$QUERY_OK" != "1" ]; then
-    echo "[$TIMESTAMP] WARNING: could not read provider queue; skipping delegation check (state unchanged)."
+    log "WARNING: could not read provider queue; skipping delegation check (state unchanged)."
     exit 0
 fi
 
@@ -78,59 +80,41 @@ if [ "$QUEUE_LENGTH" -lt "$PREV_QUEUE_LENGTH" ]; then
     QUEUE_DECREASED=$((PREV_QUEUE_LENGTH - QUEUE_LENGTH))
 fi
 
-echo "[$TIMESTAMP] Queue: previous=$PREV_QUEUE_LENGTH, current=$QUEUE_LENGTH, diff=$QUEUE_DECREASED"
+log "Queue: previous=$PREV_QUEUE_LENGTH, current=$QUEUE_LENGTH, diff=$QUEUE_DECREASED"
 
 # Push metrics to Prometheus (PUT keeps the group clean).
 if [ -n "$PUSHGATEWAY_URL" ]; then
-    cat <<EOF | curl --silent -X PUT --data-binary @- "$DELEGATIONS_GROUP_URL"
+    push_metrics "$DELEGATIONS_GROUP_URL" <<EOF_METRICS && log "Pushed metrics to Pushgateway"
 # HELP aztec_provider_queue_decrease Queue decrease since last check (new delegations)
 # TYPE aztec_provider_queue_decrease gauge
 aztec_provider_queue_decrease{provider_id="${PROVIDER_ID}"} ${QUEUE_DECREASED}
-EOF
-    echo "[$TIMESTAMP] Pushed metrics to Pushgateway"
+EOF_METRICS
 fi
 
 # Alert on new delegations
 if [ "$QUEUE_DECREASED" -gt 0 ]; then
-    ALERT_MSG="🆕 AZTEC: New delegation detected!\n\nProvider ID: $PROVIDER_ID\nNew delegations: $QUEUE_DECREASED\nRemaining queue: $QUEUE_LENGTH\n\n⚠️ ACTION REQUIRED:\n1. Check staking dashboard for new sequencer\n2. Find the Split contract address\n3. Update keystore coinbase configuration\n4. Restart sequencer node\n\nDashboard: https://staking.aztec.network"
+    log "ALERT: $QUEUE_DECREASED new delegation(s) detected!"
+    send_alert "🆕 AZTEC: New delegation detected!
 
-    echo "[$TIMESTAMP] ALERT: $QUEUE_DECREASED new delegation(s) detected!"
+Provider ID: $PROVIDER_ID
+New delegations: $QUEUE_DECREASED
+Remaining queue: $QUEUE_LENGTH
 
-    # Send to Slack/Discord webhook
-    if [ -n "$WEBHOOK_URL" ]; then
-        curl -X POST "$WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "{\"text\":\"$ALERT_MSG\"}" \
-            --silent
-        echo "[$TIMESTAMP] Sent Slack/Discord alert"
-    fi
+⚠️ ACTION REQUIRED:
+1. Check staking dashboard for new sequencer
+2. Find the Split contract address
+3. Update keystore coinbase configuration
+4. Restart sequencer node
 
-    # Send to Discord webhook
-    if [ -n "$DISCORD_WEBHOOK" ]; then
-        curl -X POST "$DISCORD_WEBHOOK" \
-            -H "Content-Type: application/json" \
-            -d "{\"content\":\"$ALERT_MSG\"}" \
-            --silent
-        echo "[$TIMESTAMP] Sent Discord alert"
-    fi
-
-    # Send to Telegram
-    if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-        curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TELEGRAM_CHAT_ID}" \
-            -d "text=${ALERT_MSG}" \
-            -d "parse_mode=HTML" \
-            --silent
-        echo "[$TIMESTAMP] Sent Telegram alert"
-    fi
+Dashboard: https://staking.aztec.network"
 else
-    echo "[$TIMESTAMP] No new delegations detected"
+    log "No new delegations detected"
 fi
 
 # Save current state
-cat > "$STATE_FILE" << EOF
+cat > "$STATE_FILE" << EOF_STATE
 QUEUE_LENGTH=$QUEUE_LENGTH
 LAST_CHECK=$TIMESTAMP
-EOF
+EOF_STATE
 
-echo "[$TIMESTAMP] Check complete"
+log "Check complete"

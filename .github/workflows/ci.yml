@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: lint / promtool / amtool / unit tests / contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install lint tooling
+        run: |
+          python -m pip install --quiet yamllint pyyaml
+          sudo apt-get install -y -qq shellcheck bc >/dev/null
+
+      - name: Read pinned Prometheus/Alertmanager versions from the Makefile
+        id: versions
+        run: |
+          echo "prometheus=$(sed -n 's/^PROMETHEUS_VERSION ?= //p' Makefile)" >> "$GITHUB_OUTPUT"
+          echo "alertmanager=$(sed -n 's/^ALERTMANAGER_VERSION ?= //p' Makefile)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache promtool/amtool
+        id: tools-cache
+        uses: actions/cache@v4
+        with:
+          path: bin
+          key: tools-prom${{ steps.versions.outputs.prometheus }}-am${{ steps.versions.outputs.alertmanager }}-${{ runner.os }}
+
+      - name: Download promtool/amtool
+        if: steps.tools-cache.outputs.cache-hit != 'true'
+        run: make tools
+
+      - name: Lint (yamllint, shellcheck, dashboard JSON)
+        run: make lint
+
+      - name: promtool / amtool config checks
+        run: make check
+
+      - name: Alert + recording rule unit tests
+        run: make test
+
+      - name: Cron script smoke tests (mock RPC + Pushgateway)
+        run: make test-scripts
+
+      - name: Downstream-consumer contract check
+        run: make check-contract
+
+  changelog-gate:
+    name: contract files need a CHANGELOG entry
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail when a contract file changed without touching CHANGELOG.md
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$BASE" "$HEAD")
+          echo "$changed"
+          contract='^(grafana/dashboards/aztec-sequencer\.json|prometheus/alerts/aztec-alerts\.yml|prometheus/recording-rules\.yml|scripts/check-geth-health\.sh)$'
+          if echo "$changed" | grep -Eq "$contract" && ! echo "$changed" | grep -qx 'CHANGELOG.md'; then
+            echo "::error::A downstream-contract file changed but CHANGELOG.md was not updated (see README 'Downstream Consumers')."
+            exit 1
+          fi
+          echo "changelog gate ok"

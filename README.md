@@ -21,16 +21,25 @@ aztec-monitoring/
 ├── prometheus/
 │   ├── prometheus.yml                 # Prometheus scrape configuration
 │   ├── recording-rules.yml            # Pre-computed metric rules
-│   ├── alertmanager.example.yml       # Routing: critical→PagerDuty, warning→chat
-│   └── alerts/
-│       └── aztec-alerts.yml           # Alert rules (critical, warning, provider)
-└── scripts/
-    ├── config.env.example             # Configuration template
-    ├── setup-pushgateway.sh           # Pushgateway installer (systemd)
-    ├── check-geth-health.sh           # Geth node health monitor
-    ├── check-publisher-balance.sh     # Publisher ETH balance monitor
-    ├── check-provider-queue.sh        # Keystore queue monitor
-    └── check-delegations.sh           # New delegation detector
+│   ├── alertmanager.example.yml       # Routing: every alert → PagerDuty + inhibitions
+│   ├── alerts/
+│   │   └── aztec-alerts.yml           # Alert rules (critical-only)
+│   └── tests/
+│       └── aztec-alerts.test.yml      # promtool unit tests for every rule
+├── scripts/
+│   ├── config.env.example             # Configuration template
+│   ├── lib/common.sh                  # Shared helpers (notify, push, hex→dec)
+│   ├── setup-pushgateway.sh           # Pushgateway installer (systemd)
+│   ├── check-geth-health.sh           # Geth node health monitor
+│   ├── check-publisher-balance.sh     # Publisher ETH balance monitor
+│   ├── check-provider-queue.sh        # Keystore queue monitor
+│   └── check-delegations.sh           # New delegation detector
+├── tests/
+│   ├── check-contract.py              # Enforces the downstream-consumer contract
+│   ├── scripts-smoke.sh               # Runs the cron scripts against a mock RPC/Pushgateway
+│   └── mock-server.py                 # The mock (stdlib only)
+├── Makefile                           # `make ci` = the full local/CI gate
+└── .github/workflows/ci.yml           # Same gate on every push / PR
 ```
 
 ## Prerequisites
@@ -227,6 +236,24 @@ curl -s http://localhost:9090/api/v1/rules | grep -o '"name":"[^"]*"'
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
+## Development & CI
+
+Every push and pull request runs `.github/workflows/ci.yml`, which is exactly
+`make ci`:
+
+| Target | What it runs |
+|--------|--------------|
+| `make lint` | `yamllint` on the Prometheus YAML, `shellcheck` on every script, dashboard JSON parse |
+| `make check` | `promtool check rules`, `promtool check config`, `amtool check-config` |
+| `make test` | `promtool test rules` — unit tests in `prometheus/tests/` for every alert and recording rule (fresh-vs-stale `GethDown`, the `aztec_status="proposed"` selector, the V5/v4 balance fallback, …) |
+| `make test-scripts` | Runs the cron scripts against `tests/mock-server.py` (fake geth JSON-RPC + Pushgateway + webhook) and asserts the pushed metrics, including the label-free geth group the `GethDown` alert depends on |
+| `make check-contract` | `tests/check-contract.py` — mechanically enforces the [Downstream Consumers](#downstream-consumers) contract (dashboard uid/variables/panel hygiene, alert names + critical-only policy, recording-rule names, README table in sync) |
+
+`make tools` downloads pinned `promtool`/`amtool` binaries into `./bin` if you
+don't have them on `PATH`. A pull request that touches a contract file without
+touching `CHANGELOG.md` fails the `changelog-gate` job. Optional pre-commit
+hooks mirroring the fast checks live in `.pre-commit-config.yaml`.
+
 ## Metrics Reference
 
 ### From Aztec Node (via OTEL Collector)
@@ -389,7 +416,10 @@ entry that says so:
 | Alert names + severity policy | `AztecNodeDown`, `LowL1PublisherBalance`, `L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`, all `severity: critical` — downstream Alertmanager routing/inhibition keys off these |
 
 Every change to a contract file gets a `CHANGELOG.md` entry; the downstream
-action on each entry is to re-run the sync and review the diff.
+action on each entry is to re-run the sync and review the diff. CI enforces
+both halves: `tests/check-contract.py` fails on any drift from the table above,
+and the `changelog-gate` job fails a PR that edits a contract file without a
+`CHANGELOG.md` change.
 
 ## Links
 
