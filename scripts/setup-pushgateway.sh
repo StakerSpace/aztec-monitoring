@@ -45,7 +45,7 @@ echo "Downloading Pushgateway ${VERSION} for linux/${ARCH}..."
 echo "  URL: ${DOWNLOAD_URL}"
 
 TMPDIR=$(mktemp -d)
-trap "rm -rf $TMPDIR" EXIT
+trap 'rm -rf "$TMPDIR"' EXIT
 
 curl -fSL --retry 3 -o "${TMPDIR}/pushgateway.tar.gz" "$DOWNLOAD_URL"
 

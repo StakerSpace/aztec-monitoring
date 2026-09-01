@@ -64,16 +64,22 @@ stale when the node dies (AztecNodeDown covers that case via `up`), and
   rules need deltas over a window, `offset` subtraction is used deliberately
   in some places instead of `increase()`.
 
-## Validation — run before committing rule/config changes
+## Validation — run before committing anything
 
 ```bash
-promtool check rules prometheus/alerts/aztec-alerts.yml prometheus/recording-rules.yml
-promtool check config --syntax-only prometheus/prometheus.yml
-amtool check-config prometheus/alertmanager.example.yml
+make tools   # once: pinned promtool/amtool into ./bin (skip if on PATH)
+make ci      # lint + promtool/amtool checks + rule unit tests + script smoke tests + contract check
 ```
 
-(promtool ships in the prometheus release tarball, amtool in alertmanager's.)
-There is no CI — these checks are the gate.
+`make ci` is byte-for-byte what `.github/workflows/ci.yml` runs on every push
+and PR, so a green local run means a green PR. Individual targets: `lint`,
+`check`, `test` (promtool unit tests in `prometheus/tests/`), `test-scripts`
+(cron scripts against `tests/mock-server.py`), `check-contract`
+(`tests/check-contract.py`, fails on any drift from the README contract table).
+CI also fails a PR that edits a contract file without touching `CHANGELOG.md`.
+
+**When you change a rule, extend `prometheus/tests/aztec-alerts.test.yml`** —
+the tests exist precisely to pin the gotchas below.
 
 ## Structure notes
 
@@ -82,7 +88,11 @@ There is no CI — these checks are the gate.
 - `scripts/` are cron-driven; configured via `scripts/config.env` (from
   `config.env.example`). Provider scripts need `cast` (Foundry); geth/balance
   scripts are plain JSON-RPC. Scripts use PUT/DELETE against Pushgateway to
-  avoid stale series.
+  avoid stale series. Shared helpers live in `scripts/lib/common.sh`
+  (`send_alert`, `push_metrics`, `delete_metrics`, `hex_to_dec`, `log`) — add
+  channels/behaviour there, not per script. Build alert messages with real
+  newlines; the lib JSON-escapes them. Use `hex_to_dec` (bc) for RPC hex —
+  bash `printf %d` silently clamps above 2^63-1 (≈9.22 ETH in wei).
 - `grafana/dashboards/aztec-sequencer.json` targets the final Grafana v1
   schema (`schemaVersion: 42`); keep panels lintable (description + unit) and
   don't rename template variables.

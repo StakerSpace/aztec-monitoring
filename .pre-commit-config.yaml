@@ -1,0 +1,29 @@
+# Optional local hooks: `pip install pre-commit && pre-commit install`.
+# Mirrors the fast half of `make ci`; the promtool/amtool hooks need the
+# binaries on PATH (`make tools` puts them in ./bin).
+repos:
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-c, .yamllint]
+        files: ^prometheus/
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [-S, warning]
+  - repo: local
+    hooks:
+      - id: promtool-amtool
+        name: promtool/amtool config checks
+        entry: make check
+        language: system
+        pass_filenames: false
+        files: ^prometheus/
+      - id: contract
+        name: downstream-consumer contract check
+        entry: python3 tests/check-contract.py
+        language: system
+        pass_filenames: false
+        files: ^(grafana/|prometheus/|README\.md)

@@ -10,3 +10,6 @@ scripts/.delegation-state
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local tool downloads (make tools)
+bin/

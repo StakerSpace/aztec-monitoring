@@ -1,0 +1,8 @@
+---
+# yamllint config — Prometheus/Alertmanager YAML. Long annotation strings and
+# PromQL expressions are normal here, so line length is not enforced.
+extends: relaxed
+rules:
+  line-length: disable
+  document-start: disable
+  truthy: disable

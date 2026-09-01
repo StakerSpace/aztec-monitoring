@@ -1,0 +1,284 @@
+# Unit tests for the alert + recording rules.
+#
+#   promtool test rules prometheus/tests/aztec-alerts.test.yml   (make test)
+#
+# These pin the behaviours that have bitten this repo before (see CLAUDE.md):
+#   - the chain-tip selector is aztec_status="proposed" (an "" selector never fires)
+#   - LowL1PublisherBalance fires on the V5 metric AND falls back to the v4 one
+#   - GethDown only fires on FRESH Pushgateway data (dead cron => no page)
+#   - AztecNodeDown is the only rule that survives a dead node (via `up`)
+#
+# promtool test clocks start at t=0, so `time()` at eval_time 20m is 1200.
+# push_time_seconds series therefore track the test clock explicitly.
+
+rule_files:
+  - ../alerts/aztec-alerts.yml
+  - ../recording-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------------------
+  # AztecNodeDown
+  # ---------------------------------------------------------------------------
+  - name: AztecNodeDown fires after the scrape target has been down for 5m
+    interval: 1m
+    input_series:
+      - series: 'up{job="aztec-node", instance="sequencer-1"}'
+        values: '1x5 0x10'
+      - series: 'up{job="geth", instance="geth-local"}'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AztecNodeDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: AztecNodeDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: node
+              job: aztec-node
+              instance: sequencer-1
+            exp_annotations:
+              summary: "Aztec node down (sequencer-1)"
+              description: "Prometheus cannot scrape sequencer-1's metrics endpoint. The node or its OTEL collector is down, or port 8889 is unreachable."
+              runbook: "Check the node machine, `docker compose ps`, and firewall/connectivity to :8889"
+
+  # ---------------------------------------------------------------------------
+  # LowL1PublisherBalance
+  # ---------------------------------------------------------------------------
+  - name: LowL1PublisherBalance fires on the V5 aztec_l1_balance_eth gauge
+    interval: 1m
+    input_series:
+      - series: 'aztec_l1_balance_eth{job="aztec-node", instance="sequencer-1"}'
+        values: '0.15x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: LowL1PublisherBalance
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: LowL1PublisherBalance
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: publisher
+              job: aztec-node
+              instance: sequencer-1
+            exp_annotations:
+              summary: "Publisher ETH critically low (sequencer-1)"
+              description: "Balance is 0.15 ETH on sequencer-1. Refill immediately."
+              runbook: "Top up publisher address with at least 1 ETH"
+
+  - name: LowL1PublisherBalance falls back to the v4 publisher metric
+    interval: 1m
+    input_series:
+      - series: 'aztec_l1_publisher_balance_eth{job="aztec-node", instance="sequencer-1"}'
+        values: '0.1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: LowL1PublisherBalance
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: publisher
+              job: aztec-node
+              instance: sequencer-1
+            exp_annotations:
+              summary: "Publisher ETH critically low (sequencer-1)"
+              description: "Balance is 0.1 ETH on sequencer-1. Refill immediately."
+              runbook: "Top up publisher address with at least 1 ETH"
+
+  - name: LowL1PublisherBalance stays silent with a healthy balance
+    interval: 1m
+    input_series:
+      - series: 'aztec_l1_balance_eth{job="aztec-node", instance="sequencer-1"}'
+        values: '1.5x10'
+      - series: 'aztec_l1_publisher_balance_eth{job="aztec-node", instance="sequencer-1"}'
+        values: '1.5x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: LowL1PublisherBalance
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # L2BlockHeightNotIncreasing
+  # ---------------------------------------------------------------------------
+  - name: L2BlockHeightNotIncreasing fires when the proposed tip stalls
+    interval: 1m
+    input_series:
+      # advances for 10m, then flat for 30m
+      - series: 'aztec_archiver_block_height{aztec_status="proposed", job="aztec-node", instance="sequencer-1"}'
+        values: '100+1x10 110x30'
+      # proven keeps advancing — must not matter
+      - series: 'aztec_archiver_block_height{aztec_status="proven", job="aztec-node", instance="sequencer-1"}'
+        values: '50+1x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: L2BlockHeightNotIncreasing
+        exp_alerts: []
+      - eval_time: 32m
+        alertname: L2BlockHeightNotIncreasing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: archiver
+              aztec_status: proposed
+              job: aztec-node
+              instance: sequencer-1
+            exp_annotations:
+              summary: "No L2 blocks in 15m (sequencer-1)"
+              description: "sequencer-1 has not advanced the proposed tip in 15m. May be stuck or out of sync."
+              runbook: "Check archiver logs, verify L1 RPC, consider restart"
+
+  - name: L2BlockHeightNotIncreasing stays silent while the proposed tip advances
+    interval: 1m
+    input_series:
+      - series: 'aztec_archiver_block_height{aztec_status="proposed", job="aztec-node", instance="sequencer-1"}'
+        values: '100+1x40'
+      # a stalled proven/finalized height is not a page
+      - series: 'aztec_archiver_block_height{aztec_status="proven", job="aztec-node", instance="sequencer-1"}'
+        values: '50x40'
+      - series: 'aztec_archiver_block_height{aztec_status="finalized", job="aztec-node", instance="sequencer-1"}'
+        values: '40x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: L2BlockHeightNotIncreasing
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # WorldStateCriticalError
+  # ---------------------------------------------------------------------------
+  - name: WorldStateCriticalError fires on any increase within 15m
+    interval: 1m
+    input_series:
+      - series: 'aztec_world_state_critical_error_count{job="aztec-node", instance="sequencer-1"}'
+        values: '0x10 1x10'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: WorldStateCriticalError
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: WorldStateCriticalError
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: world_state
+              job: aztec-node
+              instance: sequencer-1
+            exp_annotations:
+              summary: "World state critical error (sequencer-1)"
+              description: "1 critical world-state error(s) on sequencer-1 in 15m."
+              runbook: "Check node logs for world-state errors; may need resync from snapshot"
+
+  # ---------------------------------------------------------------------------
+  # GethDown — freshness gate on push_time_seconds
+  # ---------------------------------------------------------------------------
+  - name: GethDown fires on fresh geth_up=0 data
+    interval: 1m
+    input_series:
+      - series: 'aztec_geth_up{job="aztec_geth", instance="local"}'
+        values: '0x30'
+      # pushed every minute, tracking the test clock (time() == eval seconds)
+      - series: 'push_time_seconds{job="aztec_geth", instance="local"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: GethDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: GethDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: geth
+              job: aztec_geth
+              instance: local
+            exp_annotations:
+              summary: "Geth is down"
+              description: "The geth health check reports the node as down (fresh data)."
+              runbook: "Check geth process, RPC, and logs"
+
+  - name: GethDown never pages on STALE data (dead cron)
+    interval: 1m
+    input_series:
+      - series: 'aztec_geth_up{job="aztec_geth", instance="local"}'
+        values: '0x60'
+      # last push at t=0 and never again — stale after 15m
+      - series: 'push_time_seconds{job="aztec_geth", instance="local"}'
+        values: '0x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: GethDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: geth
+              job: aztec_geth
+              instance: local
+            exp_annotations:
+              summary: "Geth is down"
+              description: "The geth health check reports the node as down (fresh data)."
+              runbook: "Check geth process, RPC, and logs"
+      - eval_time: 30m
+        alertname: GethDown
+        exp_alerts: []
+
+  - name: GethDown is not vouched for by another push group's freshness
+    interval: 1m
+    input_series:
+      - series: 'aztec_geth_up{job="aztec_geth", instance="local"}'
+        values: '0x60'
+      - series: 'push_time_seconds{job="aztec_geth", instance="local"}'
+        values: '0x60'
+      # the balance script keeps pushing fresh data under a different group
+      - series: 'push_time_seconds{job="aztec_publisher", instance="0xabc"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: GethDown
+        exp_alerts: []
+
+  - name: GethDown stays silent while geth is up
+    interval: 1m
+    input_series:
+      - series: 'aztec_geth_up{job="aztec_geth", instance="local"}'
+        values: '1x30'
+      - series: 'push_time_seconds{job="aztec_geth", instance="local"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: GethDown
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # Recording rules
+  # ---------------------------------------------------------------------------
+  - name: recording rules produce the documented series
+    interval: 1m
+    input_series:
+      # draining 0.01 ETH per minute -> -0.6 ETH/h
+      - series: 'aztec_l1_publisher_balance_eth{job="aztec-node", instance="sequencer-1"}'
+        values: '2-0.01x120'
+      - series: 'aztec_l1_publisher_gas_price_gwei_sum{job="aztec-node", instance="sequencer-1"}'
+        values: '0+20x120'
+      - series: 'aztec_l1_publisher_gas_price_gwei_count{job="aztec-node", instance="sequencer-1"}'
+        values: '0+1x120'
+    promql_expr_test:
+      - expr: 'round(aztec:publisher_balance_burn_rate_per_hour, 0.01)'
+        eval_time: 90m
+        exp_samples:
+          # round() drops __name__, so match on the remaining labels only
+          - labels: '{job="aztec-node", instance="sequencer-1"}'
+            value: -0.6
+      - expr: 'round(aztec:publisher_balance_hours_remaining, 0.1)'
+        eval_time: 90m
+        exp_samples:
+          # balance 1.1 ETH at t=90m / 0.6 ETH/h ~= 1.8h
+          - labels: '{job="aztec-node", instance="sequencer-1"}'
+            value: 1.8
+      - expr: 'aztec:l1_gas_price_avg_gwei'
+        eval_time: 90m
+        exp_samples:
+          - labels: 'aztec:l1_gas_price_avg_gwei{job="aztec-node", instance="sequencer-1"}'
+            value: 20
