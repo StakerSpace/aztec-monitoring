@@ -27,8 +27,8 @@
 #   3. Lighthouse (port 5054) - Consensus layer client metrics
 #      Exposes: beacon_*, libp2p_*, sync_*, validator_*, slot_*, epoch_*
 #
-#   4. Pushgateway (port 9091) - Custom metrics pushed by cron scripts
-#      Exposes: aztec_geth_up, aztec_geth_block_number, aztec_publisher_balance_eth, etc.
+# Everything the alerts and dashboard need comes from these native endpoints —
+# there is no Pushgateway / cron-script layer.
 
 global:
   scrape_interval: 15s
@@ -42,6 +42,7 @@ scrape_configs:
   # ── Aztec Nodes (via each node's OTEL Collector) ─────────────────────
   # One job for all nodes; one block per node with a pinned instance label.
   # Adjust targets to your deployment (container name, host IP, or node IP).
+  # AztecNodeDown selects up{job=~"aztec-.*"} — keep the "aztec-" prefix.
   - job_name: "aztec-node"
     scrape_interval: 15s
     metrics_path: /metrics
@@ -85,13 +86,6 @@ scrape_configs:
       - targets: ["lighthouse:5054"]
         labels:
           instance: "lighthouse-local"
-
-  # ── Pushgateway (Custom Script Metrics) ──────────────────────────────
-  - job_name: "pushgateway"
-    honor_labels: true
-    scrape_interval: 15s
-    static_configs:
-      - targets: ["pushgateway:9091"]
 
   # ── OTEL Collector Self-Metrics (optional) ───────────────────────────
   # The collector's own health metrics live on port 8888 INSIDE the collector

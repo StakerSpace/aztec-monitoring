@@ -5,8 +5,10 @@ Guidance for Claude Code when working in this repository.
 ## What this repo is
 
 Monitoring for Aztec sequencer operations: Prometheus scrape config, alert +
-recording rules, a Grafana dashboard, and on-chain check scripts that push
-custom metrics through a Pushgateway. It scrapes nodes deployed by
+recording rules, a Grafana dashboard, and an Alertmanager example. Every
+signal is a metric the node, Geth or Lighthouse exports natively — there is
+deliberately no Pushgateway / cron-script layer (it was removed after its
+scripts sat dead for months unnoticed; don't reintroduce one). It scrapes nodes deployed by
 [StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible)
 (OTEL collector on `<node-ip>:8889`) and follows the conventions of the
 official installer (docs:
@@ -24,8 +26,8 @@ The README's **"Downstream Consumers"** section pins a sync contract:
   filter only on `job`/`instance` + metric-intrinsic labels
 - alert names + `severity: critical` policy; recording-rule names
 - rules stay label-portable: no deployment-specific selectors, no `on(...)`
-  joins on this repo's exact scrape labels (one documented exception:
-  `AztecNodeDown` selects `up{job="aztec-node"}`)
+  joins on this repo's exact scrape labels (`AztecNodeDown` selects the
+  job-name prefix `up{job=~"aztec-.*"}`, never one exact job name)
 
 **Every change to a contract file gets a `CHANGELOG.md` entry**; breaking
 changes must say so explicitly. When in doubt, it's a contract change.
@@ -34,13 +36,16 @@ changes must say so explicitly. When in doubt, it's a contract change.
 
 Only page-worthy conditions become alerts, and every alert is
 `severity: critical`: `AztecNodeDown`, `LowL1PublisherBalance`,
-`L2BlockHeightNotIncreasing`, `WorldStateCriticalError`, `GethDown`.
+`L2BlockHeightNotIncreasing`, `L1BlockHeightNotIncreasing`,
+`WorldStateCriticalError`, `GethBlockStalled`,
+`OwnValidatorSlashingVotesHigh`, `OwnValidatorSlashed`.
 Softer signals (balance trending low, blob/proposal/attestation failures,
-peer counts, reorgs, provider queue…) are dashboard panels, **not alerts** —
+peer counts, reorgs…) are dashboard panels, **not alerts** —
 do not add `warning`/`info` rules; that set was deliberately removed.
 Alerts are also hardened against false pages (fail closed): OTEL alerts go
-stale when the node dies (AztecNodeDown covers that case via `up`), and
-`GethDown` is gated on Pushgateway `push_time_seconds` freshness.
+stale when the node dies (AztecNodeDown covers that case via `up`); a dead
+Geth makes `chain_head_block` stale, and `L1BlockHeightNotIncreasing` covers
+that case from the node's side.
 
 ## Metric/label gotchas (cost hours if forgotten)
 
@@ -56,13 +61,15 @@ stale when the node dies (AztecNodeDown covers that case via `up`), and
   `static_configs` block per node with a **pinned `instance` label** (stable
   per-node name, never changed). Unpinned instance = every restart fragments
   every dashboard series.
-- `check-geth-health.sh` must keep pushing its metrics with **no per-metric
-  labels** — `GethDown`'s bare-`and` freshness gate does a full-label-set
-  match against the group's `push_time_seconds`; an extra label silences the
-  alert permanently (fails closed).
-- Cumulative Aztec counters are exported as gauges (UpDownCounter) — where
-  rules need deltas over a window, `offset` subtraction is used deliberately
-  in some places instead of `increase()`.
+- Heights (`aztec_archiver_*block_height`, `chain_head_block`) are gauges:
+  "not advancing" is `changes(x[15m]) == 0`, never `increase()`.
+- Cumulative Aztec counters are exported as gauges (UpDownCounter, no
+  `_total` suffix) that reset to 0 on restart; `increase()` over them is fine
+  for "did it go up" checks (a reset to 0 adds nothing).
+- `aztec_sequencer_attestations_collect_duration_milliseconds` is a **gauge**
+  (last value), not a histogram — there are no `_sum`/`_count`/`_bucket`.
+- Slasher gauges (`aztec_slasher_*`) carry no attributes, so comparing two of
+  them with a bare operator matches per target. Only validator nodes emit them.
 
 ## Validation — run before committing rule/config changes
 
@@ -79,10 +86,7 @@ There is no CI — these checks are the gate.
 
 - `prometheus/prometheus.yml` is a merge-template for the user's Prometheus,
   not a drop-in (targets are placeholders). Not a contract file.
-- `scripts/` are cron-driven; configured via `scripts/config.env` (from
-  `config.env.example`). Provider scripts need `cast` (Foundry); geth/balance
-  scripts are plain JSON-RPC. Scripts use PUT/DELETE against Pushgateway to
-  avoid stale series.
 - `grafana/dashboards/aztec-sequencer.json` targets the final Grafana v1
   schema (`schemaVersion: 42`); keep panels lintable (description + unit) and
-  don't rename template variables.
+  don't rename template variables. Legends use `{{instance}}` — every node
+  shares one job, so `{{job}}` renders identically for all of them.

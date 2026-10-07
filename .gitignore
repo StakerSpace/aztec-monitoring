@@ -1,9 +1,3 @@
-# Config with secrets
-scripts/config.env
-
-# State files
-scripts/.delegation-state
-
 # Logs
 *.log
 
