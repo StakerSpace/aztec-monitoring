@@ -50,10 +50,26 @@ that case from the node's side.
 ## Metric/label gotchas (cost hours if forgotten)
 
 - `aztec_archiver_block_height` is split by `aztec_status`
-  (`proposed`/`proven`/`finalized`). **There is no empty-string series** —
-  `{aztec_status=""}` matches nothing and an alert built on it never fires
-  (the official docs' metrics-reference example even makes this mistake).
-  Use `aztec_status="proposed"` for the chain tip.
+  (`proposed`/`checkpointed`/`proven` on v5.2+ and v6, `proposed`/`proven`/
+  `finalized` on older nodes — `archiver/src/modules/instrumentation.ts`).
+  **There is no empty-string series** — `{aztec_status=""}` matches nothing
+  and an alert built on it never fires (the official docs' metrics-reference
+  example even makes this mistake). Use `aztec_status="proposed"` for the
+  chain tip; only select `proposed`/`proven`, which exist on every version.
+- **Slasher metrics need node ≥ 5.2.0** (`aztec_slasher_own_validator_*`,
+  `aztec_slasher_quorum_size`). On older nodes the two slashing alerts have no
+  series and are silent — check the deployed image tag before debugging the
+  rules. The README's "Node version requirements" table is the reference.
+- **`OTEL_RESOURCE_ATTRIBUTES=service.instance.id=…` on the node does NOT pin
+  the id** — the SDK's `serviceInstanceIdDetector` runs last in
+  `telemetry-client/src/otel_resource.ts` and overwrites it with a boot-random
+  UUID. The only durable per-node name is the Prometheus target `instance`
+  label (or `host` on the monitoring-stack hub). Don't "fix" this by enabling
+  `resource_to_telemetry_conversion` on the collector.
+- Source of truth for metric names is `yarn-project/telemetry-client/src/metrics.ts`
+  in aztec-labs-eng/aztec-node (v6+) / AztecProtocol/aztec-packages (≤ v5).
+  Exported name = dots→underscores + `_<unit>` suffix when the definition has a
+  unit (`eth`, `gwei`, `peers`, `ms`→`milliseconds`, `tokens`).
 - Balance: `aztec_l1_balance_eth` (V5) exists from node startup;
   `aztec_l1_publisher_balance_eth` only appears once proposing starts. Rules
   use `(aztec_l1_balance_eth or aztec_l1_publisher_balance_eth)`.

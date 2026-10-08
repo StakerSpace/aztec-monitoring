@@ -10,20 +10,25 @@
 # Pushgateway / cron-script layer (it was removed: scripts that die silently
 # are exactly the fragility a pager must not depend on).
 #
-# Metric names cross-checked against the ACTUAL aztec-packages source
-# (v5.3.0-rc.1), Aztec's own production monitoring, AND the official V5
+# Metric names verified against the node source
+# (yarn-project/telemetry-client/src/metrics.ts in aztec-labs-eng/aztec-node
+# v6.0.0-rc.2 and AztecProtocol/aztec-packages v5.2.1), Aztec's own production
+# alerts (spartan/metrics/grafana/alerts/rules.yaml), AND the official V5
 # monitoring installer (docs.aztec.network/scripts/aztec-monitoring.sh).
-# Works on both the v4 line and V5:
-#   aztec_l1_balance_eth                    (V5 gauge — exists from node startup)
+# Works on the v4 line, V5 and v6 — with one version floor, noted per metric:
+#   aztec_l1_balance_eth                    (V5+ gauge — exists from node startup;
+#                                            one series per l1_sender address)
 #   aztec_l1_publisher_balance_eth          (gauge, 'eth' suffix — v4 fallback,
 #                                            only emitted once proposing starts)
 #   aztec_archiver_block_height             (gauge, split by aztec_status)
 #   aztec_archiver_l1_block_height          (gauge, no attributes)
 #   aztec_world_state_critical_error_count  (counter)
-#   aztec_slasher_own_validator_current_round_votes_max  (gauge, no attributes)
-#   aztec_slasher_quorum_size               (gauge, no attributes)
-#   aztec_slasher_own_validator_slashed_count (UpDownCounter → gauge, no attributes)
+#   aztec_slasher_own_validator_current_round_votes_max  (gauge, no attributes; node >= 5.2.0)
+#   aztec_slasher_quorum_size               (gauge, no attributes; node >= 5.2.0)
+#   aztec_slasher_own_validator_slashed_count (UpDownCounter → gauge, no attributes; node >= 5.2.0)
 #   chain_head_block                        (Geth, /debug/metrics/prometheus)
+# On a node older than 5.2.0 the two slasher alerts have no series and stay
+# silent — upgrade the node rather than editing the rules.
 #
 # Heights are gauges, so "not advancing" uses changes(), not increase().
 # increase() is a counter function (it reads a prune/reorg drop as a counter
@@ -36,10 +41,11 @@
 # prometheus.yml), with a pinned per-target `instance` label naming each node.
 #
 # IMPORTANT: aztec_archiver_block_height is split by the aztec_status attribute
-# (values: proposed / proven / finalized). There is NO empty-string series, so a
-# selector like {aztec_status=""} matches nothing and an alert built on it never
-# fires. Use aztec_status="proposed" for the chain tip - this is exactly what
-# Aztec's own "Chain - no new blocks" alert uses.
+# (values: proposed / checkpointed / proven on v5.2+ and v6; proposed / proven /
+# finalized on older nodes). There is NO empty-string series, so a selector like
+# {aztec_status=""} matches nothing and an alert built on it never fires. Use
+# aztec_status="proposed" for the chain tip - this is exactly what Aztec's own
+# "Chain - no new blocks" alert uses, and it exists on every node version.
 
 groups:
   - name: aztec_critical
@@ -163,4 +169,4 @@ groups:
         annotations:
           summary: "Own validator SLASHED ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
           description: "{{ $labels.instance }} recorded an executed slash against one of its own validators in the last 30m."
-          runbook: "Check aztec_slasher_own_validator_slashed_amount, the slash reason in node logs, and stake/withdrawal status"
+          runbook: "Check aztec_slasher_own_validator_slashed_amount_tokens, the slash reason in node logs (\"Own validator 0x... was slashed\"), and stake/withdrawal status"

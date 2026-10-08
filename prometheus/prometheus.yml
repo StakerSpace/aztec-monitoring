@@ -43,6 +43,7 @@ scrape_configs:
   # One job for all nodes; one block per node with a pinned instance label.
   # Adjust targets to your deployment (container name, host IP, or node IP).
   # AztecNodeDown selects up{job=~"aztec-.*"} — keep the "aztec-" prefix.
+  # The slasher alerts need node >= 5.2.0 (see README "Node version requirements").
   - job_name: "aztec-node"
     scrape_interval: 15s
     metrics_path: /metrics

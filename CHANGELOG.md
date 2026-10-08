@@ -3,6 +3,54 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-10-08 — Verified against node source (v6.0.0-rc.2 / v5.2.1); version floors documented
+
+Cross-repo compatibility pass with
+[aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible)
+and [monitoring-stack-ansible](https://github.com/StakerSpace/monitoring-stack-ansible).
+Every metric in the rules and dashboard was re-verified against the node
+source (`yarn-project/telemetry-client/src/metrics.ts` in aztec-labs-eng/aztec-node
+`v6.0.0-rc.2` and AztecProtocol/aztec-packages `v5.2.1`), Aztec's own
+production alerts and the official installer. **No rule expression, alert
+name, severity, recording-rule name or dashboard query changed** — this is a
+docs/comments release. Downstream consumers re-run the sync; the diff is the
+alert-file header comments and one runbook annotation.
+
+### Changed
+- `prometheus/alerts/aztec-alerts.yml` (contract file, comments + one
+  annotation only): header now names the exact source versions verified
+  against, records the **node ≥ 5.2.0 floor for the slasher metrics**
+  (`aztec_slasher_own_validator_*`, `aztec_slasher_quorum_size` were added in
+  v5.2.0 — on an older node `OwnValidatorSlashingVotesHigh` and
+  `OwnValidatorSlashed` have no series and stay silent), and corrects the
+  `aztec_status` value list (`proposed`/`checkpointed`/`proven` on v5.2+ and
+  v6; `finalized` only exists on older nodes — nothing here ever selected
+  it). `OwnValidatorSlashed`'s runbook names the exported metric
+  `aztec_slasher_own_validator_slashed_amount_tokens` (unit `tokens` →
+  `_tokens` suffix) and the log line to grep.
+- README: "Node version requirements" table (which signal needs which node
+  version, and what happens on an older node); corrected `aztec_status`
+  values; documented that `OTEL_RESOURCE_ATTRIBUTES=service.instance.id=…`
+  on the node does **not** survive (the SDK's instance-id detector runs last
+  in `telemetry-client/src/otel_resource.ts`), so the Prometheus target
+  `instance` label remains the only durable per-node name; added the
+  monitoring-stack-ansible onboarding path (`prometheus_extra_endpoints` with
+  `job: aztec-node`); troubleshooting rows for silent slasher alerts and
+  per-address `LowL1PublisherBalance` pages (`aztec_l1_balance_eth` carries an
+  `l1_sender` label); links to the v6 node source repo, the slashing docs and
+  our provider page.
+- `prometheus.yml`: comment pointing at the slasher version floor.
+
+### Verified (no change needed)
+- `aztec_l1_block_height` *does* exist (publisher-side L1 view, used by the
+  installer's `AztecL1RpcStuck`); we keep `aztec_archiver_l1_block_height`
+  for `L1BlockHeightNotIncreasing` because it is present on every archiver,
+  including non-publishing nodes.
+- `aztec_archiver_prune_count` gained an `aztec_archiver_prune_type` label
+  (`unproven`/`uncheckpointed`/`l1_conflict`/`orphan`/`l1_mismatch`); the
+  "Chain Reorgs" panel sums nothing, so it now shows one line per type — the
+  legend `Prunes {{instance}}` plus the type label keeps them apart.
+
 ## 2026-10-07 — Native signals only; L1/Geth stall and slasher alerts
 
 Removes the Pushgateway + cron-script layer (its scripts had been dead for
