@@ -73,13 +73,26 @@ All Aztec nodes share the single `aztec-node` job — the convention used by the
 [official monitoring installer](https://docs.aztec.network/operate/operators/concepts/monitoring#set-up-monitoring-with-the-installer) —
 with one `static_configs` block per node that **pins a stable `instance`
 label** (e.g. `sequencer-mainnet-1`). Pinning matters: the node regenerates
-`service.instance.id` on every restart, so an unpinned instance label
-fragments every dashboard series on each restart. Pick a durable name per
-node and never change it. Nodes deployed with
+`service.instance.id` on every restart (the OTEL SDK's
+`serviceInstanceIdDetector` runs *after* the env detector in
+`telemetry-client/src/otel_resource.ts`, so even
+`OTEL_RESOURCE_ATTRIBUTES=service.instance.id=…` on the node does not pin
+it), so an unpinned instance label fragments every dashboard series on each
+restart. The only place the name sticks is the Prometheus target label. Pick a
+durable name per node and never change it. Nodes deployed with
 [StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible)
 expose the collector on `<node-ip>:8889` out of the box. `AztecNodeDown`
 selects `up{job=~"aztec-.*"}`, so keep the `aztec-` job-name prefix if you
 rename the job (per-node jobs like `aztec-mainnet-active` work too).
+
+If you run the hub from
+[StakerSpace/monitoring-stack-ansible](https://github.com/StakerSpace/monitoring-stack-ansible)
+instead, you don't edit `prometheus.yml` at all: declare the node as a
+`prometheus_extra_endpoints` entry with `job: aztec-node`, `port: 8889` and
+`labels: {chain: aztec, network: <mainnet|testnet>, component: sequencer}`
+in that host's `host_vars` (the stack's `host` label is the durable per-node
+name there), and `make sync-aztec` vendors this repo's rules + dashboard. Its
+`docs/AZTEC_MONITORING.md` is the end-to-end recipe.
 
 > **Note:** Adjust target hostnames/IPs to match your setup. If services run on the host (not Docker), use `localhost` or the host IP instead of container names.
 
@@ -134,7 +147,8 @@ curl -s http://geth:6060/debug/metrics/prometheus | grep '^chain_head_block '
 |---------|--------------------|
 | An alert never fires / a panel is empty | The metric/series may not exist on your node. Check it directly: `curl -s http://otel-collector:8889/metrics \| grep <metric>`. Note `aztec_archiver_block_height` is split by `aztec_status` — query `aztec_status="proposed"` for the tip (an empty `""` selector matches nothing). |
 | `GethBlockStalled` never fires / no `chain_head_block` | Geth metrics not enabled or not scraped — start Geth with `--metrics --metrics.addr 0.0.0.0` and check the `geth` target is up. A fully dead Geth makes the series stale; `L1BlockHeightNotIncreasing` is what pages then. |
-| Slasher alerts never fire | `aztec_slasher_*` only exists on nodes running the slasher (validators). Check `curl -s http://<node-ip>:8889/metrics \| grep aztec_slasher`. |
+| Slasher alerts never fire | `aztec_slasher_own_validator_*` / `aztec_slasher_quorum_size` only exist on **node ≥ 5.2.0** running the sequencer (validators). Check the image tag, then `curl -s http://<node-ip>:8889/metrics \| grep aztec_slasher`. |
+| `LowL1PublisherBalance` pages once per address | Expected on providers: `aztec_l1_balance_eth` carries an `l1_sender` label per publisher/attester address the node funds from. Each underfunded address is its own page. |
 | No notifications despite a firing alert | Configure Alertmanager routing — see `prometheus/alertmanager.example.yml`. |
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
@@ -143,11 +157,15 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
 ### From Aztec Node (via OTEL Collector)
 
-Names below are the **exported Prometheus names**, cross-checked against the
-actual aztec-packages instrument definitions *and* Aztec's own production
-monitoring (`spartan/metrics/grafana/dashboards` and `.../alerts/rules.yaml`) on
-master (latest release line v4.1.2 / v4.2.0-nightly). OTEL dots become
-underscores and unit-carrying instruments gain a unit suffix (`…_eth`, `…_gwei`).
+Names below are the **exported Prometheus names**, verified (2026-10-08)
+against the node source — `yarn-project/telemetry-client/src/metrics.ts` in
+[aztec-labs-eng/aztec-node](https://github.com/aztec-labs-eng/aztec-node)
+`v6.0.0-rc.2` (Testnet line) and
+[AztecProtocol/aztec-packages](https://github.com/AztecProtocol/aztec-packages)
+`v5.2.1` (Mainnet line) — plus Aztec's own production alerts
+(`spartan/metrics/grafana/alerts/rules.yaml`) and the official monitoring
+installer. OTEL dots become underscores and unit-carrying instruments gain a
+unit suffix (`…_eth`, `…_gwei`, `…_peers`, `…_milliseconds`).
 
 The **Suggested threshold** column is a reference for dashboard-watching — it is
 **not** the implemented alert set — the paging alerts are listed under
@@ -157,7 +175,7 @@ The **Suggested threshold** column is a reference for dashboard-watching — it 
 |--------|-------------|---------------------|
 | `aztec_l1_balance_eth` | L1 account ETH balance (V5 — present from node startup) | < 0.2 ETH critical |
 | `aztec_l1_publisher_balance_eth` | Publisher ETH balance (gauge; only emitted once proposing starts) | < 0.2 ETH critical, < 1.0 ETH warning |
-| `aztec_archiver_block_height` | L2 block height, split by `aztec_status` (`proposed`/`proven`/`finalized`) | tip not changing 15m (critical) |
+| `aztec_archiver_block_height` | L2 block height, split by `aztec_status` (`proposed`/`checkpointed`/`proven` on v5.2+ and v6; `proposed`/`proven`/`finalized` on older nodes) | tip not changing 15m (critical) |
 | `aztec_archiver_l1_block_height` | L1 block height the archiver has seen | No change in 15m (critical) |
 | `aztec_l1_publisher_blob_tx_success` | Successful blob submissions (UpDownCounter → gauge) | - |
 | `aztec_l1_publisher_blob_tx_failure` | Failed blob submissions (UpDownCounter → gauge) | Any in 15m |
@@ -175,21 +193,51 @@ The **Suggested threshold** column is a reference for dashboard-watching — it 
 | `aztec_sequencer_attestations_collected_count` | Attestations collected for proposals | - |
 | `aztec_validator_attestation_failed_node_issue_count` / `aztec_validator_attestation_failed_bad_proposal_count` | Attestations this node failed to produce | node-issue any in 15m |
 | `aztec_l1_tx_reverted_count` / `aztec_l1_tx_cancelled_count` / `aztec_l1_tx_not_mined_count` | L1 publish failure modes | sum > 1 in 15m |
-| `aztec_slasher_own_validator_current_round_votes_max` | Most slash votes any of our validators' committee positions has this round (gauge) | ≥ 50% of quorum (critical) |
-| `aztec_slasher_quorum_size` | Votes needed in a round to slash (gauge) | - |
-| `aztec_slasher_own_validator_slashed_count` | Executed slashes against our validators (UpDownCounter → gauge) | any increase (critical) |
+| `aztec_slasher_own_validator_current_round_votes_max` | Most slash votes any of our validators' committee positions has this round (gauge; **node ≥ 5.2.0**) | ≥ 50% of quorum (critical) |
+| `aztec_slasher_quorum_size` | Votes needed in a round to slash (gauge; **node ≥ 5.2.0**) | - |
+| `aztec_slasher_own_validator_slashed_count` | Executed slashes against our validators (UpDownCounter → gauge; **node ≥ 5.2.0**) | any increase (critical) |
+| `aztec_slasher_own_validator_slashed_amount_tokens` | Tokens slashed from our validators (unit `tokens` → `_tokens` suffix; **node ≥ 5.2.0**) | reference only — `OwnValidatorSlashed` pages on the count |
 
 > **`aztec_status` gotcha:** `aztec_archiver_block_height` is split by the
-> `aztec_status` attribute with values `proposed` / `proven` / `finalized` — there
-> is **no empty-string series**. A selector like `{aztec_status=""}` matches
-> nothing, so use `aztec_status="proposed"` for the chain tip (this is what
-> Aztec's own "no new blocks" alert uses).
+> `aztec_status` attribute — `proposed` / `checkpointed` / `proven` on current
+> nodes (v5.2+, v6; `archiver/src/modules/instrumentation.ts`), `proposed` /
+> `proven` / `finalized` on older ones — and there is **no empty-string
+> series**. A selector like `{aztec_status=""}` matches nothing (the official
+> metrics-reference page still shows that broken example), so use
+> `aztec_status="proposed"` for the chain tip (this is what Aztec's own "no new
+> blocks" alert uses). `proposed` and `proven` exist on every version, which is
+> why the dashboard and alerts only ever select those two.
+>
+> **Slasher metrics need node ≥ 5.2.0.** `aztec_slasher_own_validator_*` and
+> `aztec_slasher_quorum_size` were added in v5.2.0 (v5.1.0 only has
+> `aztec_slasher_round_executed_count`). On an older node the two slashing
+> alerts have no series and stay silent — see
+> [Node version requirements](#node-version-requirements).
 >
 > **Peer count:** the exported name is `aztec_peer_manager_peer_count_peers` (the
 > instrument is emitted with a `_peers` suffix) — confirmed verbatim against
 > Aztec's own `network-tps` dashboard. The dashboard now charts it as a "Peer
 > Count" stat. We don't *alert* on a fixed peer threshold (a healthy floor is
 > deployment-specific) — watch the "Peer Count" panel on the dashboard instead.
+
+### Node version requirements
+
+Every signal above is emitted natively by the node, but not every signal
+exists on every node version. Minimums, from the source:
+
+| Signal | Minimum node version | If the node is older |
+|---|---|---|
+| `aztec_l1_balance_eth` (startup-time balance) | 5.0.0 | `LowL1PublisherBalance` falls back to `aztec_l1_publisher_balance_eth`, which only appears once proposing starts |
+| `aztec_slasher_own_validator_current_round_votes_max`, `aztec_slasher_quorum_size`, `aztec_slasher_own_validator_slashed_count` | **5.2.0** | `OwnValidatorSlashingVotesHigh` and `OwnValidatorSlashed` never fire (no series) |
+| `aztec_status="checkpointed"` series | 5.2.0 | n/a — nothing here selects it |
+| everything else in the rules and dashboard | 4.x | — |
+
+Nodes deployed with
+[StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible)
+pin Testnet to the v6 release candidate and Mainnet to the 5.2 line, so both
+slashing alerts are live there. If you run an older Mainnet image, upgrade —
+the slasher metrics are the only native way to see your own validators being
+voted against before the round executes.
 
 ### From Geth (scraped directly)
 
@@ -286,8 +334,12 @@ action on each entry is to re-run the sync and review the diff.
 - [Monitoring and metrics (concepts + official installer)](https://docs.aztec.network/operate/operators/concepts/monitoring)
 - [Aztec Monitoring & Observability](https://docs.aztec.network/operate/operators/monitoring)
 - [Key Metrics Reference](https://docs.aztec.network/operate/operators/monitoring/metrics-reference)
+- [Slashing and offenses](https://docs.aztec.network/operate/operators/sequencer-management/slashing_and_offenses) — what `OwnValidatorSlashingVotesHigh` / `OwnValidatorSlashed` are warning you about
+- [Staking provider guide](https://docs.aztec.network/operate/operators/provider) — we are [provider #50](https://stake.aztec.network/providers/50)
 - [Run a Node](https://docs.aztec.network/operate/operators)
+- Node source: [aztec-labs-eng/aztec-node](https://github.com/aztec-labs-eng/aztec-node) (v6+, `yarn-project/telemetry-client/src/metrics.ts` is the metric catalogue); protocol/L1 contracts: [AztecProtocol/aztec-packages](https://github.com/AztecProtocol/aztec-packages)
 - [StakerSpace/aztec-sequencer-ansible](https://github.com/StakerSpace/aztec-sequencer-ansible) — deploys nodes whose metrics endpoint this stack scrapes out of the box
+- [StakerSpace/monitoring-stack-ansible](https://github.com/StakerSpace/monitoring-stack-ansible) — the hub that vendors this repo's rules + dashboard (`make sync-aztec`)
 
 ---
 
