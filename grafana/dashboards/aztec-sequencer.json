@@ -95,7 +95,7 @@
         {
           "expr": "aztec_l1_publisher_balance_eth{job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -151,7 +151,7 @@
         {
           "expr": "aztec_archiver_block_height{aztec_status=\"proposed\",job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -207,7 +207,7 @@
         {
           "expr": "aztec_archiver_block_height{aztec_status=\"proven\",job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -269,9 +269,9 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "aztec:publisher_balance_hours_remaining{job=~\"$job\"}",
+          "expr": "aztec:publisher_balance_hours_remaining{job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -327,7 +327,7 @@
         {
           "expr": "aztec_archiver_l1_block_height{job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -391,7 +391,7 @@
         {
           "expr": "aztec_peer_manager_peer_count_peers{job=~\"$job\",instance=~\"$instance\"}",
           "refId": "A",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{instance}}"
         }
       ]
     },
@@ -666,17 +666,17 @@
       "targets": [
         {
           "expr": "aztec_archiver_block_height{aztec_status=\"proposed\",job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "L2 tip {{job}}",
+          "legendFormat": "L2 tip {{instance}}",
           "refId": "A"
         },
         {
           "expr": "aztec_archiver_block_height{aztec_status=\"proven\",job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "L2 proven {{job}}",
+          "legendFormat": "L2 proven {{instance}}",
           "refId": "B"
         },
         {
           "expr": "aztec_archiver_l1_block_height{job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "L1 {{job}}",
+          "legendFormat": "L1 {{instance}}",
           "refId": "C"
         }
       ]
@@ -793,12 +793,12 @@
       "targets": [
         {
           "expr": "increase(aztec_l1_publisher_blob_tx_success{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "Success {{job}}",
+          "legendFormat": "Success {{instance}}",
           "refId": "A"
         },
         {
           "expr": "increase(aztec_l1_publisher_blob_tx_failure{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "Fail {{job}}",
+          "legendFormat": "Fail {{instance}}",
           "refId": "B"
         }
       ]
@@ -884,12 +884,12 @@
       "targets": [
         {
           "expr": "aztec_archiver_rollup_proof_count{job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "Proofs {{job}}",
+          "legendFormat": "Proofs {{instance}}",
           "refId": "A"
         },
         {
           "expr": "aztec_archiver_block_sync_count{job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "Blocks Synced {{job}}",
+          "legendFormat": "Blocks Synced {{instance}}",
           "refId": "B"
         }
       ]
@@ -995,7 +995,7 @@
       "targets": [
         {
           "expr": "increase(aztec_archiver_prune_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "Prunes {{job}}",
+          "legendFormat": "Prunes {{instance}}",
           "refId": "A"
         }
       ]
@@ -1138,8 +1138,8 @@
             "scaleDistribution": {
               "type": "linear"
             },
-            "showPoints": "never",
-            "spanNulls": false,
+            "showPoints": "auto",
+            "spanNulls": true,
             "stacking": {
               "group": "A",
               "mode": "none"
@@ -1168,7 +1168,37 @@
           },
           "unit": "ms"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^allowance /"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
@@ -1180,7 +1210,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "mean",
+            "lastNotNull",
             "max"
           ],
           "displayMode": "list",
@@ -1193,17 +1223,17 @@
         }
       },
       "title": "Attestation Collection Time",
-      "description": "Time to collect committee attestations for a proposed block. Aztec alerts when this exceeds ~20s.",
+      "description": "Time the sequencer spent collecting committee attestations for its latest checkpoint proposal (gauge, last value), against the allowance it had. Aztec alerts when this exceeds ~20s.",
       "type": "timeseries",
       "targets": [
         {
-          "expr": "rate(aztec_sequencer_attestations_collect_duration_milliseconds_sum{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval]) / rate(aztec_sequencer_attestations_collect_duration_milliseconds_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "avg {{job}}",
+          "expr": "aztec_sequencer_attestations_collect_duration_milliseconds{job=~\"$job\",instance=~\"$instance\"}",
+          "legendFormat": "collect {{instance}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(aztec_sequencer_attestations_collect_duration_milliseconds_bucket{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])))",
-          "legendFormat": "p95",
+          "expr": "aztec_sequencer_attestations_collect_allowance_milliseconds{job=~\"$job\",instance=~\"$instance\"}",
+          "legendFormat": "allowance {{instance}}",
           "refId": "B"
         }
       ]
@@ -1289,12 +1319,12 @@
       "targets": [
         {
           "expr": "increase(aztec_validator_attestation_failed_node_issue_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "node issue {{aztec_error_type}}",
+          "legendFormat": "node issue {{aztec_error_type}} {{instance}}",
           "refId": "A"
         },
         {
           "expr": "increase(aztec_validator_attestation_failed_bad_proposal_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "bad proposal {{aztec_error_type}}",
+          "legendFormat": "bad proposal {{aztec_error_type}} {{instance}}",
           "refId": "B"
         }
       ]
@@ -1393,7 +1423,7 @@
       "targets": [
         {
           "expr": "increase(aztec_sequencer_block_proposal_failed_count{aztec_error_type!=\"insufficient_txs\",job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "{{aztec_error_type}} {{job}}",
+          "legendFormat": "{{aztec_error_type}} {{instance}}",
           "refId": "A"
         }
       ]
@@ -1479,17 +1509,17 @@
       "targets": [
         {
           "expr": "increase(aztec_l1_tx_reverted_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "reverted {{job}}",
+          "legendFormat": "reverted {{instance}}",
           "refId": "A"
         },
         {
           "expr": "increase(aztec_l1_tx_cancelled_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "cancelled {{job}}",
+          "legendFormat": "cancelled {{instance}}",
           "refId": "B"
         },
         {
           "expr": "increase(aztec_l1_tx_not_mined_count{job=~\"$job\",instance=~\"$instance\"}[$__rate_interval])",
-          "legendFormat": "not mined {{job}}",
+          "legendFormat": "not mined {{instance}}",
           "refId": "C"
         }
       ]
@@ -1597,7 +1627,7 @@
       "targets": [
         {
           "expr": "aztec_l1_publisher_balance_eth{job=~\"$job\",instance=~\"$instance\"}",
-          "legendFormat": "{{job}}",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ]
@@ -1683,8 +1713,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "aztec:publisher_balance_burn_rate_per_hour{job=~\"$job\"}",
-          "legendFormat": "{{job}}",
+          "expr": "aztec:publisher_balance_burn_rate_per_hour{job=~\"$job\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ]
@@ -1770,426 +1800,8 @@
       "type": "timeseries",
       "targets": [
         {
-          "expr": "aztec:l1_gas_price_avg_gwei{job=~\"$job\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 53
-      },
-      "id": 104,
-      "panels": [],
-      "title": "Local Geth Node",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "red",
-                  "text": "DOWN"
-                }
-              },
-              "type": "value"
-            },
-            {
-              "options": {
-                "1": {
-                  "color": "green",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 54
-      },
-      "id": 40,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Geth Status",
-      "description": "Whether the local Geth execution client is responding (from check-geth-health.sh).",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_geth_up)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 54
-      },
-      "id": 41,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Geth Block Number",
-      "description": "Latest block seen by the local Geth node.",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_geth_block_number)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 3
-              },
-              {
-                "color": "green",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 54
-      },
-      "id": 42,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Geth Peers",
-      "description": "Geth connected peer count. Few peers risks stale L1 data.",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_geth_peer_count)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "green",
-                  "text": "SYNCED"
-                }
-              },
-              "type": "value"
-            },
-            {
-              "options": {
-                "1": {
-                  "color": "orange",
-                  "text": "SYNCING"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 54
-      },
-      "id": 43,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Geth Sync",
-      "description": "Geth sync status (synced vs still catching up).",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_geth_syncing)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 58
-      },
-      "id": 105,
-      "panels": [],
-      "title": "Provider Operations",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 5
-              },
-              {
-                "color": "green",
-                "value": 10
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 12,
-        "x": 0,
-        "y": 59
-      },
-      "id": 50,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "Keystore Queue",
-      "description": "Available keystores for new delegations. Keep 10+ in the queue.",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_provider_queue_length)",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 12,
-        "x": 12,
-        "y": 59
-      },
-      "id": 51,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "title": "New Delegations (last check)",
-      "description": "Queue decrease since the last delegation check. Positive = new delegations consumed keystores.",
-      "type": "stat",
-      "targets": [
-        {
-          "expr": "max(aztec_provider_queue_decrease)",
+          "expr": "aztec:l1_gas_price_avg_gwei{job=~\"$job\",instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ]
@@ -2276,6 +1888,6 @@
   "timezone": "browser",
   "title": "Aztec Sequencer Dashboard",
   "uid": "aztec-sequencer",
-  "version": 7,
+  "version": 8,
   "weekStart": ""
 }

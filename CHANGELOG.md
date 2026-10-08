@@ -3,6 +3,65 @@
 All notable changes to the Aztec monitoring stack are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## 2026-10-07 — Native signals only; L1/Geth stall and slasher alerts
+
+Removes the Pushgateway + cron-script layer (its scripts had been dead for
+months without anyone noticing — the exact fragility a pager must not depend
+on) and adds the alerts that would have caught a stalled L1. **Breaking
+contract change — downstream consumers re-run the sync, update Alertmanager
+routing/inhibition for the alert names below, and review the diff.**
+
+### Removed
+- **`GethDown` alert (breaking: alert name removed)** — it depended on
+  `check-geth-health.sh` pushing `aztec_geth_up` to a Pushgateway. Replaced by
+  `GethBlockStalled` + `L1BlockHeightNotIncreasing` below, which read native
+  metrics. **Downstream action:** drop `GethDown` from routing/inhibition.
+- `scripts/` (Pushgateway installer, geth/balance/provider-queue/delegation
+  checks) and the `pushgateway` scrape job. Publisher balance is covered
+  natively by `aztec_l1_balance_eth` (V5); Geth/Lighthouse are scraped
+  directly. The keystore-queue and new-delegation checks have no native
+  replacement and are gone — restore them from git history if needed.
+- Dashboard: the **Local Geth Node** and **Provider Operations** rows (they
+  only charted the Pushgateway metrics).
+- `alertmanager.example.yml`: the `GethDown` inhibition rule.
+
+### Added
+- **`L1BlockHeightNotIncreasing`** (`severity: critical`, `component:
+  archiver`) — `changes(aztec_archiver_l1_block_height[15m]) == 0` for 5m.
+  Catches any L1 outage as the node sees it: Geth dead, stuck or unreachable.
+- **`GethBlockStalled`** (`severity: critical`, `component: geth`) —
+  `changes(chain_head_block[15m]) == 0` for 5m. Catches a running-but-stuck
+  Geth. `chain_head_block` is Geth-intrinsic, so no job selector is used.
+- **`OwnValidatorSlashingVotesHigh`** (`severity: critical`, `component:
+  slasher`) — `aztec_slasher_own_validator_current_round_votes_max >= 0.5 *
+  aztec_slasher_quorum_size` for 1m: one of our validators is halfway to a
+  slash quorum this round. Both gauges are attribute-less (verified against
+  aztec-packages v5.3.0-rc.1), so the bare comparison is label-portable.
+- **`OwnValidatorSlashed`** (`severity: critical`, `component: slasher`) —
+  `increase(aztec_slasher_own_validator_slashed_count[30m]) > 0`.
+- `alertmanager.example.yml`: `L1BlockHeightNotIncreasing` inhibits
+  `L2BlockHeightNotIncreasing` on the same node (cause pages, symptom doesn't).
+
+### Changed
+- **`AztecNodeDown` selector (contract file, name/severity unchanged)** —
+  `up{job="aztec-node"}` → `up{job=~"aztec-.*"}`. Works with the official
+  installer's single `aztec-node` job and with per-node `aztec-*` jobs, and
+  removes the one deployment-specific selector exception. Consumers whose
+  Aztec jobs don't start with `aztec-` still need a transform rewrite.
+- **`L2BlockHeightNotIncreasing` expr (contract file, name/severity
+  unchanged)** — `increase(...)` → `changes(...)`. Heights are gauges;
+  `changes()` is the type-correct function (identical result for `== 0`).
+- **Dashboard: Attestation Collection Time now shows data** — the panel
+  queried `_sum`/`_count`/`_bucket` series, but
+  `aztec_sequencer_attestations_collect_duration_milliseconds` is a gauge, so
+  it was always empty. It now plots the gauge against
+  `aztec_sequencer_attestations_collect_allowance_milliseconds` (dashed).
+- **Dashboard: legends use `{{instance}}`** instead of `{{job}}` — all nodes
+  share the `aztec-node` job, so every node's series rendered with the same
+  name. The three recording-rule panels (ETH Hours Remaining, ETH Burn Rate,
+  L1 Gas Price) also now honor the `instance` variable (they only filtered
+  on `job`). Dashboard `version` 7 → 8; uid and variables unchanged.
+
 ## 2026-08-05 — Align with the official V5 monitoring installer
 
 Aztec's docs now ship a maintained monitoring installer

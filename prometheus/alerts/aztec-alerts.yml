@@ -2,25 +2,38 @@
 #
 # Node-operator policy: we ONLY alert on conditions that warrant waking
 # someone up. Everything that was previously "warning" or "info" (soft balance,
-# blob/proposal/attestation failures, slot fill, reorgs, geth peer/sync/stall,
-# provider keystore queue, etc.) has been removed — watch those on the Grafana
-# dashboard instead. Each alert below is severity: critical and should page.
+# blob/proposal/attestation failures, slot fill, reorgs, geth peers/sync,
+# etc.) has been removed — watch those on the Grafana dashboard instead. Each
+# alert below is severity: critical and should page.
 #
-# Metric names cross-checked against the ACTUAL aztec-packages source, Aztec's
-# own production monitoring, AND the official V5 monitoring installer
-# (docs.aztec.network/scripts/aztec-monitoring.sh, verified against live
-# v5.0.0 nodes). Works on both the v4 line and V5:
+# Every rule reads metrics the node and Geth export natively — there is no
+# Pushgateway / cron-script layer (it was removed: scripts that die silently
+# are exactly the fragility a pager must not depend on).
+#
+# Metric names cross-checked against the ACTUAL aztec-packages source
+# (v5.3.0-rc.1), Aztec's own production monitoring, AND the official V5
+# monitoring installer (docs.aztec.network/scripts/aztec-monitoring.sh).
+# Works on both the v4 line and V5:
 #   aztec_l1_balance_eth                    (V5 gauge — exists from node startup)
 #   aztec_l1_publisher_balance_eth          (gauge, 'eth' suffix — v4 fallback,
 #                                            only emitted once proposing starts)
 #   aztec_archiver_block_height             (gauge, split by aztec_status)
+#   aztec_archiver_l1_block_height          (gauge, no attributes)
 #   aztec_world_state_critical_error_count  (counter)
-#   aztec_geth_up                           (pushgateway gauge from check-geth-health.sh)
+#   aztec_slasher_own_validator_current_round_votes_max  (gauge, no attributes)
+#   aztec_slasher_quorum_size               (gauge, no attributes)
+#   aztec_slasher_own_validator_slashed_count (UpDownCounter → gauge, no attributes)
+#   chain_head_block                        (Geth, /debug/metrics/prometheus)
 #
-# Node scrape-job convention: the Aztec node targets are scraped under ONE job
-# named "aztec-node" (the official installer's convention; see prometheus.yml),
-# with a pinned per-target `instance` label naming each node. AztecNodeDown
-# keys off that job name — rename it if your scrape config differs.
+# Heights are gauges, so "not advancing" uses changes(), not increase().
+# increase() is a counter function (it reads a prune/reorg drop as a counter
+# reset and extrapolates); changes() counts value changes, which is exactly
+# "did this move in the window". For an == 0 check the two agree today; this
+# keeps the rules type-correct so they stay right if a threshold is added.
+#
+# Node scrape-job convention: Aztec node targets are scraped under job names
+# starting with "aztec-" (the official installer uses "aztec-node"; see
+# prometheus.yml), with a pinned per-target `instance` label naming each node.
 #
 # IMPORTANT: aztec_archiver_block_height is split by the aztec_status attribute
 # (values: proposed / proven / finalized). There is NO empty-string series, so a
@@ -37,8 +50,10 @@ groups:
       # `up` is scrape-target health, so this cannot fire on phantom data.
       # (The official installer pages after 2m; we allow 5m to ride out
       # transient network blips between monitoring machine and node.)
+      # Matches any job named aztec-* (the official "aztec-node", or per-node
+      # names like "aztec-mainnet-active") rather than one exact job name.
       - alert: AztecNodeDown
-        expr: up{job="aztec-node"} == 0
+        expr: up{job=~"aztec-.*"} == 0
         for: 5m
         labels:
           severity: critical
@@ -67,7 +82,7 @@ groups:
       # Node stuck - not processing blocks.
       # aztec_status="proposed" = chain tip (matches Aztec's own no-new-blocks alert).
       - alert: L2BlockHeightNotIncreasing
-        expr: increase(aztec_archiver_block_height{aztec_status="proposed"}[15m]) == 0
+        expr: changes(aztec_archiver_block_height{aztec_status="proposed"}[15m]) == 0
         for: 5m
         labels:
           severity: critical
@@ -89,42 +104,63 @@ groups:
           description: "{{ $value }} critical world-state error(s) on {{ $labels.instance }} in 15m."
           runbook: "Check node logs for world-state errors; may need resync from snapshot"
 
-      # Geth (local L1 execution client) down - the sequencer can't do L1 ops.
-      # Gated on push_time_seconds freshness so a dead check-geth-health.sh cron
-      # (rather than an actually-down geth) can NEVER raise a page on stale data.
-      #
-      # The bare `and` (no on() clause) matches on the FULL label set. That is
-      # deliberate: aztec_geth_up and its group's push_time_seconds come from
-      # the same Pushgateway group, so their labels are identical however the
-      # gateway is scraped:
-      #   - directly with honor_labels: true (this repo's prometheus.yml):
-      #     both sides carry job="aztec_geth", instance="local"
-      #   - through an aggregating hub with honor_labels: false (e.g.
-      #     StakerSpace/monitoring-stack-ansible): both sides carry the target
-      #     labels (job/instance/host/...) plus exported_job="aztec_geth",
-      #     exported_instance="local"
-      # Either way the other push groups (aztec_publisher, aztec_provider,
-      # aztec_delegations) differ in job/exported_job so their freshness can
-      # never satisfy this gate. The previous `and on(job, instance)` form
-      # broke that behind a hub scrape: every group on a gateway shares the
-      # same scrape-level job/instance there, so ANY fresh group (e.g. the
-      # 30-minute balance check) could vouch for a stale aztec_geth_up.
-      # (Scraping several nodes' gateways directly with honor_labels: true is
-      # broken regardless of this expression — the pushed job="aztec_geth",
-      # instance="local" collide across nodes at ingestion; give each
-      # pushgateway target distinguishing labels, or scrape via a hub.)
-      #
-      # CONSTRAINT: check-geth-health.sh must keep pushing aztec_geth_up with
-      # NO per-metric labels. An extra label on the metric (absent from the
-      # group's push_time_seconds) would make the full-label match fail and
-      # this alert go permanently silent (fails closed, never falsely pages).
-      - alert: GethDown
-        expr: aztec_geth_up == 0 and (time() - push_time_seconds < 900)
+      # Node's view of L1 frozen - the archiver has stopped advancing its L1
+      # height, i.e. its L1 RPC (usually the local Geth) is dead, stalled or
+      # unreachable. This is the alert that catches a Geth outage from the
+      # node's side: it fires whether Geth is down, stuck, or lost peers, and
+      # it is fail-closed (a dead node makes it stale; AztecNodeDown pages).
+      - alert: L1BlockHeightNotIncreasing
+        expr: changes(aztec_archiver_l1_block_height[15m]) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: archiver
+        annotations:
+          summary: "Node's L1 view frozen for 15m ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "{{ $labels.instance }} has not seen a new L1 block in 15m. Its L1 RPC (Geth/consensus client) is down, stalled, or unreachable."
+          runbook: "Check Geth and Lighthouse (process, sync, peers) and the node's L1 RPC URL"
+
+      # Local Geth head not advancing - Geth is up (still scraped) but stuck:
+      # no peers, consensus client down, DB issue. chain_head_block is a
+      # Geth-intrinsic metric, so no job selector is needed. A fully dead Geth
+      # makes this series stale (no fire); L1BlockHeightNotIncreasing covers
+      # that case from the node's side.
+      - alert: GethBlockStalled
+        expr: changes(chain_head_block[15m]) == 0
         for: 5m
         labels:
           severity: critical
           component: geth
         annotations:
-          summary: "Geth is down{{ if $labels.host }} on {{ $labels.host }}{{ end }}"
-          description: "The geth health check reports the node as down (fresh data)."
-          runbook: "Check geth process, RPC, and logs"
+          summary: "Geth head stalled for 15m ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "Geth on {{ $labels.instance }} has not imported a new head block in 15m. It is running but not following the chain."
+          runbook: "Check Geth peers/logs and the consensus client (Lighthouse) — the EL only follows the head the CL feeds it"
+
+      # One of our validators is close to being slashed: some committee
+      # position held by our validators has collected at least half the votes
+      # needed for quorum in the current slashing round. Both gauges carry no
+      # attributes, so the bare comparison matches per node on its target
+      # labels (label-portable, like the rest of this file).
+      - alert: OwnValidatorSlashingVotesHigh
+        expr: aztec_slasher_own_validator_current_round_votes_max >= 0.5 * aztec_slasher_quorum_size
+        for: 1m
+        labels:
+          severity: critical
+          component: slasher
+        annotations:
+          summary: "Own validator nearing slash quorum ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "A validator on {{ $labels.instance }} has {{ $value }} slash votes this round (>= 50% of quorum). It will be slashed if the round reaches quorum."
+          runbook: "Find out why the committee is voting to slash (missed attestations/proposals, downtime, invalid blocks) and fix it before the round closes"
+
+      # One of our validators was actually slashed (executed Slashed event).
+      # UpDownCounter exported as a gauge that starts at 0 and resets on
+      # restart; increase() handles the reset (a drop to 0 adds nothing).
+      - alert: OwnValidatorSlashed
+        expr: increase(aztec_slasher_own_validator_slashed_count[30m]) > 0
+        labels:
+          severity: critical
+          component: slasher
+        annotations:
+          summary: "Own validator SLASHED ({{ $labels.instance }}{{ if $labels.host }} on {{ $labels.host }}{{ end }})"
+          description: "{{ $labels.instance }} recorded an executed slash against one of its own validators in the last 30m."
+          runbook: "Check aztec_slasher_own_validator_slashed_amount, the slash reason in node logs, and stake/withdrawal status"
